@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  okd-simple-app:
+    # build: .
+    image: okd-deployment-app:latest
+    ports:
+      - "5000:5000"
+    environment:
+      - AUTH0_DOMAIN=scienceapp.us.auth0.com
+      - API_IDENTIFIER=tGHIDeKSsEkrQGmI8PSjPUxAYRNUYdAe
+      - AUTH0_NAMESPACE=https://science.xyz/docs
