@@ -3,3 +3,4 @@ flask-cors
 python-jose
 requests
 gunicorn
+pyyaml
