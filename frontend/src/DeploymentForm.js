@@ -17,6 +17,8 @@ const DeploymentForm = () => {
   const [routeDomain, setRouteDomain] = useState(routeDomains[0]);
   const [storageRequired, setStorageRequired] = useState(false);
   const [storageDetails, setStorageDetails] = useState([]);
+  const [secretsRequired, setSecretsRequired] = useState(false);
+  const [secretsDetails, setSecretsDetails] = useState([]);
   const [generatedYaml, setGeneratedYaml] = useState(""); // Store YAML response
 
   // Function to add a new storage volume
@@ -33,6 +35,22 @@ const DeploymentForm = () => {
     const updatedStorage = [...storageDetails];
     updatedStorage[index][field] = value;
     setStorageDetails(updatedStorage);
+  };
+
+  // Function to add a new secret
+  const addSecret = () => {
+    setSecretsDetails([...secretsDetails, { name: "", key: "", value: "", mountType: "env" }]);
+  };
+
+  // Function to remove a secret
+  const removeSecret = (index) => {
+    setSecretsDetails(secretsDetails.filter((_, i) => i !== index));
+  };
+
+  const handleSecretChange = (index, field, value) => {
+    const updatedSecrets = [...secretsDetails];
+    updatedSecrets[index][field] = value;
+    setSecretsDetails(updatedSecrets);
   };
 
   // Function to copy YAML to clipboard
@@ -55,6 +73,8 @@ const DeploymentForm = () => {
       routeHostname: `${routeHostname}.${routeDomain}`,
       storageRequired,
       storageDetails,
+      secretsRequired,
+      secretsDetails,
     };
 
     fetch("/generate-yaml", {
@@ -92,6 +112,8 @@ const DeploymentForm = () => {
       routeHostname: `${routeHostname}.${routeDomain}`,
       storageRequired,
       storageDetails,
+      secretsRequired,
+      secretsDetails,
     };
 
     fetch("/deploy-to-okd", {
@@ -160,7 +182,59 @@ const DeploymentForm = () => {
           <button type="button" onClick={addStorage}>Add Volume</button>
         </div>
 
-        {/* Row 4: Network Configuration */}
+        {/* Row 4: Secrets Configuration */}
+        <div>
+          <label>
+            <input type="checkbox" checked={secretsRequired} onChange={() => setSecretsRequired(!secretsRequired)} /> Requires Secrets
+          </label>
+
+          {secretsRequired && secretsDetails.map((secret, index) => (
+            <div key={index} style={{ marginBottom: "10px", border: "1px solid #ccc", padding: "10px", borderRadius: "5px" }}>
+              <label>Secret Name: </label>
+              <input type="text" value={secret.name} onChange={(e) => handleSecretChange(index, "name", e.target.value)} />
+
+              <label> Key: </label>
+              <input type="text" value={secret.key} onChange={(e) => handleSecretChange(index, "key", e.target.value)} />
+
+              <label> Value: </label>
+              <input type="text" value={secret.value} onChange={(e) => handleSecretChange(index, "value", e.target.value)} />
+
+              <label> Mount Type: </label>
+              <select value={secret.mountType} onChange={(e) => handleSecretChange(index, "mountType", e.target.value)}>
+                <option value="env">Environment Variable</option>
+                <option value="volume">Volume Mount</option>
+              </select>
+
+              {secret.mountType === "env" && (
+                <>
+                  <label> Env Variable Name: </label>
+                  <input
+                    type="text"
+                    value={secret.envName || ""}
+                    onChange={(e) => handleSecretChange(index, "envName", e.target.value)}
+                    placeholder="Leave empty to use key name"
+                  />
+                </>
+              )}
+
+              {secret.mountType === "volume" && (
+                <>
+                  <label> Mount Path: </label>
+                  <input
+                    type="text"
+                    value={secret.mountPath || ""}
+                    onChange={(e) => handleSecretChange(index, "mountPath", e.target.value)}
+                  />
+                </>
+              )}
+
+              <button type="button" onClick={() => removeSecret(index)} style={{ marginLeft: "10px", color: "red" }}>Remove</button>
+            </div>
+          ))}
+          <button type="button" onClick={addSecret}>Add Secret</button>
+        </div>
+
+        {/* Row 5: Network Configuration */}
         <div>
           <label>Container Port: </label>
           <input type="number" value={containerPort} onChange={(e) => setContainerPort(e.target.value)} required />
