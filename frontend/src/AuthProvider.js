@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { Auth0Provider, useAuth0 } from "@auth0/auth0-react";
+import { useAuth0 } from "@auth0/auth0-react";
 
+// Create the auth context
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
@@ -10,40 +11,62 @@ export const AuthProvider = ({ children }) => {
     logout,
     getIdTokenClaims,
     user,
+    isLoading,
   } = useAuth0();
+
   const [accessToken, setAccessToken] = useState(null);
   const [userRoles, setUserRoles] = useState([]);
 
   useEffect(() => {
     const getToken = async () => {
       if (isAuthenticated) {
-        const claims = await getIdTokenClaims();
-        setAccessToken(claims.__raw);
+        try {
+          const claims = await getIdTokenClaims();
+          if (claims) {
+            setAccessToken(claims.__raw);
 
-        // Extract roles from JWT claims using environment variable for namespace
-        const roles = claims[process.env.AUTH0_NAMESPACE] || [];
-        setUserRoles(roles);
+            // Extract roles from JWT claims using environment variable for namespace
+            const namespace = window._env_?.REACT_APP_AUTH0_NAMESPACE || "https://science.xyz/roles";
+            const roles = claims[namespace] || [];
+            setUserRoles(Array.isArray(roles) ? roles : []);
+          }
+        } catch (error) {
+          console.error("Error getting token claims:", error);
+        }
       } else {
-        loginWithRedirect();
+        setAccessToken(null);
+        setUserRoles([]);
       }
     };
-    getToken();
-  }, [isAuthenticated, getIdTokenClaims, loginWithRedirect]);
+
+    if (!isLoading) {
+      getToken();
+    }
+  }, [isAuthenticated, getIdTokenClaims, isLoading]);
+
+  // Value to be provided by the context
+  const contextValue = {
+    isAuthenticated,
+    loginWithRedirect,
+    logout,
+    user,
+    accessToken,
+    userRoles,
+    isLoading
+  };
 
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        loginWithRedirect,
-        logout,
-        user,
-        accessToken,
-        userRoles,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+// Hook to use the auth context
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};
