@@ -26,7 +26,7 @@ export const AuthProvider = ({ children }) => {
             setAccessToken(claims.__raw);
 
             // Extract roles from JWT claims using environment variable for namespace
-            const namespace = window._env_?.REACT_APP_AUTH0_NAMESPACE || "https://science.xyz/roles";
+            const namespace = window._env_?.REACT_APP_AUTH0_NAMESPACE || [];
             const roles = claims[namespace] || [];
             setUserRoles(Array.isArray(roles) ? roles : []);
           }

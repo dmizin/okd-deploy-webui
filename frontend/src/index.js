@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import { Auth0Provider } from '@auth0/auth0-react';
 import App from './App';
 
@@ -16,7 +16,7 @@ const getAuth0Config = () => {
 
   return {
     domain: window._env_.REACT_APP_AUTH0_DOMAIN,
-    clientId: window._env_.REACT_APP_CLIENT_ID, // This should match the env var name in docker-compose
+    clientId: window._env_.REACT_APP_CLIENT_ID,
     audience: window._env_.REACT_APP_API_IDENTIFIER
   };
 };
@@ -39,7 +39,12 @@ const onRedirectCallback = (appState) => {
   );
 };
 
-ReactDOM.render(
+// Create a root for React 19
+const container = document.getElementById('root');
+const root = createRoot(container);
+
+// Use root.render instead of ReactDOM.render
+root.render(
   <Auth0Provider
     domain={auth0Config.domain}
     clientId={auth0Config.clientId}
@@ -50,6 +55,5 @@ ReactDOM.render(
     onRedirectCallback={onRedirectCallback}
   >
     <App />
-  </Auth0Provider>,
-  document.getElementById('root')
+  </Auth0Provider>
 );
