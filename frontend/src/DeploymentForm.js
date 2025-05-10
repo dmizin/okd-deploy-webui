@@ -1,11 +1,26 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useApiClient } from "./apiClient";
+import { useAuth } from "./AuthProvider";
 
 const cpuOptions = ["250m", "500m", "750m", "1"];
 const memoryOptions = ["256Mi", "512Mi", "1Gi", "2Gi"];
-const storageClasses = ["csi-rbd-fast-sc", "csi-rbd-fast-sc-retain", "csi-rbd-sc", "csi-rbd-sc-retain"];
 const routeDomains = ["apps.okd.science.internal", "science.xyz"];
 
+// Default fallback storage classes in case the API fails
+const fallbackStorageClasses = [
+  { name: "csi-rbd-fast-sc", isDefault: true },
+  { name: "csi-rbd-fast-sc-retain", isDefault: false },
+  { name: "csi-rbd-sc", isDefault: false },
+  { name: "csi-rbd-sc-retain", isDefault: false }
+];
+
 const DeploymentForm = () => {
+  const apiClient = useApiClient();
+  const { isAuthenticated } = useAuth();
+
+  // Use a ref to track initialization state to prevent double fetching
+  const initialized = useRef(false);
+
   const [namespace, setNamespace] = useState("");
   const [containerImage, setContainerImage] = useState("");
   const [cpuRequest, setCpuRequest] = useState(cpuOptions[0]);
@@ -21,9 +36,93 @@ const DeploymentForm = () => {
   const [secretsDetails, setSecretsDetails] = useState([]);
   const [generatedYaml, setGeneratedYaml] = useState(""); // Store YAML response
 
+  // State for cluster data
+  const [namespaces, setNamespaces] = useState([]);
+  const [storageClasses, setStorageClasses] = useState([]);
+  const [createNewNamespace, setCreateNewNamespace] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [clusterConnected, setClusterConnected] = useState(false);
+
+  // Memoize the fetch function to avoid recreation on each render
+  const fetchClusterData = useCallback(async () => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
+    console.log("Fetching cluster data...");
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get all cluster data in a single call
+      const response = await apiClient.getClusterData();
+
+      if (response.data) {
+        // Update namespace data
+        if (response.data.namespaces && Array.isArray(response.data.namespaces)) {
+          setNamespaces(response.data.namespaces);
+        }
+
+        // Update storage classes
+        if (response.data.storageClasses && Array.isArray(response.data.storageClasses)) {
+          setStorageClasses(response.data.storageClasses);
+        } else if (!storageClasses.length) {
+          // Use fallback if no storage classes returned
+          setStorageClasses(fallbackStorageClasses);
+        }
+
+        // Set connection status
+        setClusterConnected(response.data.status !== "error");
+
+        // Set error message if any
+        if (response.data.status === "error" || response.data.status === "partial") {
+          const errorMessages = [];
+          if (response.data.namespacesError) errorMessages.push(`Namespaces: ${response.data.namespacesError}`);
+          if (response.data.storageClassesError) errorMessages.push(`Storage Classes: ${response.data.storageClassesError}`);
+          if (response.data.message) errorMessages.push(response.data.message);
+
+          if (errorMessages.length > 0) {
+            setError(errorMessages.join(', '));
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching cluster data:", err);
+      setError(`Failed to connect to the cluster: ${err.message}`);
+
+      // Use fallback storage classes if needed
+      if (!storageClasses.length) {
+        setStorageClasses(fallbackStorageClasses);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated, apiClient, storageClasses.length]);
+
+  // Initial authentication and data fetch
+  useEffect(() => {
+    if (isAuthenticated && !initialized.current) {
+      initialized.current = true;
+      console.log("Initial cluster data fetch");
+      fetchClusterData();
+    }
+  }, [isAuthenticated, fetchClusterData]);
+
   // Function to add a new storage volume
   const addStorage = () => {
-    setStorageDetails([...storageDetails, { name: "", mountPath: "", size: "", storageClass: storageClasses[0] }]);
+    // Use the first storage class from the cluster if available
+    const defaultStorageClass = storageClasses.length > 0 ?
+      storageClasses.find(sc => sc.isDefault)?.name || storageClasses[0].name :
+      "";
+
+    setStorageDetails([...storageDetails, {
+      name: "",
+      mountPath: "",
+      size: "",
+      storageClass: defaultStorageClass
+    }]);
   };
 
   // Function to remove a storage volume
@@ -53,6 +152,18 @@ const DeploymentForm = () => {
     setSecretsDetails(updatedSecrets);
   };
 
+  // Function to handle namespace selection or creation
+  const handleNamespaceChange = (e) => {
+    const value = e.target.value;
+    if (value === "create-new") {
+      setCreateNewNamespace(true);
+      setNamespace("");
+    } else {
+      setCreateNewNamespace(false);
+      setNamespace(value);
+    }
+  };
+
   // Function to copy YAML to clipboard
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedYaml).then(() => {
@@ -60,84 +171,157 @@ const DeploymentForm = () => {
     }).catch(err => console.error("Failed to copy YAML:", err));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const deploymentData = {
       namespace,
       containerImage,
       cpuRequest,
       memoryRequest,
-      containerPort: Number(containerPort), // Ensure int32 format
+      containerPort: Number(containerPort),
       exposeRoute,
-      routePort: Number(routePort), // Ensure int32 format
-      routeHostname: `${routeHostname}.${routeDomain}`,
+      routePort: Number(routePort),
+      routeHostname: exposeRoute ? `${routeHostname}.${routeDomain}` : "",
       storageRequired,
       storageDetails,
       secretsRequired,
       secretsDetails,
     };
 
-    fetch("/generate-yaml", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(deploymentData),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((data) => {
-        setGeneratedYaml(data.yaml);
-      })
-      .catch((error) => {
-        console.error("Error generating YAML:", error);
-        alert(`Failed to generate YAML: ${error.message}`);
-      });
+    try {
+      setLoading(true);
+      const response = await apiClient.generateYaml(deploymentData);
+      setLoading(false);
+
+      if (response.data && response.data.status === "success") {
+        setGeneratedYaml(response.data.yaml);
+      } else {
+        alert(`Error: ${response.data.message || "Failed to generate YAML"}`);
+      }
+    } catch (error) {
+      setLoading(false);
+      console.error("Error generating YAML:", error);
+      alert(`Failed to generate YAML: ${error.message}`);
+    }
   };
 
-
-  const deployToOKD = () => {
+  const deployToOKD = async () => {
     const deploymentData = {
       namespace,
       containerImage,
       cpuRequest,
       memoryRequest,
-      containerPort: Number(containerPort), // Ensure int32 format
+      containerPort: Number(containerPort),
       exposeRoute,
-      routePort: Number(routePort), // Ensure int32 format
-      routeHostname: `${routeHostname}.${routeDomain}`,
+      routePort: Number(routePort),
+      routeHostname: exposeRoute ? `${routeHostname}.${routeDomain}` : "",
       storageRequired,
       storageDetails,
       secretsRequired,
       secretsDetails,
     };
 
-    fetch("/deploy-to-okd", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(deploymentData),
-    })
-      .then((response) => response.json())
-      .then((data) => alert(data.message))
-      .catch((error) => console.error("Deployment error:", error));
+    try {
+      setLoading(true);
+      const response = await apiClient.deployToOKD(deploymentData);
+      setLoading(false);
+      alert(response.data.message);
+    } catch (error) {
+      setLoading(false);
+      console.error("Deployment error:", error);
+      alert(`Deployment failed: ${error.response?.data?.message || error.message}`);
+    }
   };
 
+  // Manual refresh button handler
+  const handleRefresh = () => {
+    setError(null);
+    apiClient.clearCache(); // Clear client-side cache
+    fetchClusterData();
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '20px' }}>
+        <h3>Loading cluster data...</h3>
+        <p>Connecting to OpenShift cluster...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
       <h2>Deploy a New Application</h2>
-      <form onSubmit={handleSubmit}>
 
+      {/* Status bar with connection info and refresh button */}
+      <div style={{
+        backgroundColor: clusterConnected ? '#d4edda' : '#f8d7da',
+        color: clusterConnected ? '#155724' : '#721c24',
+        padding: '10px',
+        borderRadius: '5px',
+        marginBottom: '15px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <span>
+          {clusterConnected ?
+            `Connected to OpenShift cluster (${namespaces.length} namespaces, ${storageClasses.length} storage classes available)` :
+            `Error connecting to cluster: ${error || "Unknown error"}`
+          }
+        </span>
+        <button
+          onClick={handleRefresh}
+          style={{
+            padding: '5px 10px',
+            backgroundColor: '#007bff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Refresh Cluster Data
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit}>
         {/* Row 1: Namespace and Container Image */}
         <div>
           <label>Namespace: </label>
-          <input type="text" value={namespace} onChange={(e) => setNamespace(e.target.value)} required />
+          {createNewNamespace ? (
+            <input
+              type="text"
+              value={namespace}
+              onChange={(e) => setNamespace(e.target.value)}
+              placeholder="Enter new namespace name"
+              required
+            />
+          ) : (
+            <select
+              value={namespace}
+              onChange={handleNamespaceChange}
+              required
+            >
+              <option value="">Select a namespace</option>
+              {namespaces.map((ns) => (
+                <option key={ns.name} value={ns.name}>{ns.name}</option>
+              ))}
+              <option value="create-new">--- Create New Namespace ---</option>
+            </select>
+          )}
 
-          <label> Container Image: </label>
+          {createNewNamespace && (
+            <button
+              type="button"
+              onClick={() => setCreateNewNamespace(false)}
+              style={{ marginLeft: "10px" }}
+            >
+              Cancel
+            </button>
+          )}
+
+          <label style={{ marginLeft: "20px" }}> Container Image: </label>
           <input type="text" value={containerImage} onChange={(e) => setContainerImage(e.target.value)} required />
         </div>
 
@@ -173,13 +357,21 @@ const DeploymentForm = () => {
 
               <label> Storage Class: </label>
               <select value={vol.storageClass} onChange={(e) => handleStorageChange(index, "storageClass", e.target.value)}>
-                {storageClasses.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
+                {storageClasses.length > 0 ? (
+                  storageClasses.map((sc) => (
+                    <option key={sc.name} value={sc.name}>
+                      {sc.name} {sc.isDefault ? "(Default)" : ""}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No storage classes available</option>
+                )}
               </select>
 
               <button type="button" onClick={() => removeStorage(index)} style={{ marginLeft: "10px", color: "red" }}>Remove</button>
             </div>
           ))}
-          <button type="button" onClick={addStorage}>Add Volume</button>
+          <button type="button" onClick={addStorage} disabled={!storageClasses.length}>Add Volume</button>
         </div>
 
         {/* Row 4: Secrets Configuration */}
@@ -262,7 +454,20 @@ const DeploymentForm = () => {
           )}
         </div>
 
-        <button type="submit">Generate YAML</button>
+        <button
+          type="submit"
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            margin: '20px 0',
+            cursor: 'pointer'
+          }}
+        >
+          Generate YAML
+        </button>
       </form>
 
       {/* Display YAML Output */}
@@ -272,14 +477,35 @@ const DeploymentForm = () => {
         <pre style={{ background: "#f4f4f4", padding: "10px", borderRadius: "5px", overflowX: "auto" }}>
           {generatedYaml}
         </pre>
-        <button onClick={copyToClipboard} style={{ marginTop: "5px", padding: "5px 10px", cursor: "pointer", background: "#007BFF", color: "#fff", border: "none", borderRadius: "5px" }}>
-          Copy YAML
-        </button>
+        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+          <button
+            onClick={copyToClipboard}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#007BFF',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer'
+            }}
+          >
+            Copy YAML
+          </button>
 
-        {/* Deploy to OKD button */}
-        <button onClick={deployToOKD} style={{ marginLeft: "10px", padding: "5px 10px", cursor: "pointer", background: "#28a745", color: "#fff", border: "none", borderRadius: "5px" }}>
-          Deploy to OKD
-        </button>
+          <button
+            onClick={deployToOKD}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#28a745',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer'
+            }}
+          >
+            Deploy to OKD
+          </button>
+        </div>
       </div>
     )}
   </div>
