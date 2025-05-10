@@ -1,5 +1,5 @@
 # Build Frontend
-FROM node:18-slim AS frontend
+FROM node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm install
@@ -7,7 +7,7 @@ COPY frontend ./
 RUN npm run build
 
 # Build Backend
-FROM python:3.12-slim
+FROM python:3.13-slim
 WORKDIR /app
 
 # Copy built frontend to backend
@@ -20,7 +20,7 @@ RUN apt-get update && \
     curl -L -o openshift-client-linux.tar.gz https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz && \
     tar xzvf openshift-client-linux.tar.gz && \
     mv oc /usr/bin/ && \
-    rm -f README.md kubectl openshift-client-linux.tar.gz && \
+    rm -f README.md kubectl openshift-client-linux.tar.gz 2>/dev/null || true && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -33,8 +33,21 @@ COPY backend .
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Create needed directories and set OpenShift-compatible permissions
+RUN mkdir -p /tmp/gunicorn && \
+    # Change permissions to allow running as arbitrary user
+    chmod -R g+rwX /app && \
+    chmod -R 777 /tmp/gunicorn && \
+    chmod g+rwX /entrypoint.sh && \
+    # Create .python-eggs directory for Python package cache with appropriate permissions
+    mkdir -p /.python-eggs && \
+    chmod -R 777 /.python-eggs
+
+# Set environment variable for Python eggs
+ENV PYTHON_EGG_CACHE=/.python-eggs
+
 # Set entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Run the application
-CMD ["gunicorn", "-w", "2", "-t", "120", "-b", "0.0.0.0:5000", "app:app"]
+CMD ["gunicorn", "--worker-tmp-dir", "/tmp/gunicorn", "-w", "2", "-t", "120", "-b", "0.0.0.0:5000", "app:app"]
