@@ -1,0 +1,500 @@
+/* OKD WebUI Application Styles */
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Red+Hat+Display:wght@400;500;700&display=swap');
+
+/* Base styles and CSS reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Color Palette - Using OpenShift/OKD inspired colors */
+  --primary: #0066cc;
+  --primary-dark: #004080;
+  --primary-light: #4d94ff;
+  --secondary: #703fec;
+  --success: #28a745;
+  --danger: #dc3545;
+  --warning: #ffc107;
+  --info: #17a2b8;
+  --dark: #343a40;
+  --light: #f8f9fa;
+  --gray: #6c757d;
+  --gray-light: #dee2e6;
+  --gray-dark: #495057;
+  --background: #ffffff;
+  --text: #212529;
+
+  /* Typography */
+  --font-family-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-family-headings: 'Red Hat Display', 'Inter', sans-serif;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-xxl: 3rem;
+
+  /* Borders */
+  --border-radius: 4px;
+  --border-width: 1px;
+  --border-color: var(--gray-light);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+
+  /* Transitions */
+  --transition-speed: 0.2s;
+}
+
+body {
+  font-family: var(--font-family-main);
+  line-height: 1.6;
+  color: var(--text);
+  background-color: #f9fafb;
+  font-size: 16px;
+  padding: 0;
+  margin: 0;
+}
+
+/* Container and Layout */
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-lg);
+}
+
+.header {
+  background-color: white;
+  border-bottom: var(--border-width) solid var(--border-color);
+  padding: var(--space-md) var(--space-lg);
+  box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.app-title {
+  font-family: var(--font-family-headings);
+  font-weight: 700;
+  font-size: 1.75rem;
+  color: var(--primary);
+  margin: 0;
+}
+
+.user-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-headings);
+  margin-bottom: var(--space-md);
+  font-weight: 600;
+  color: var(--dark);
+  line-height: 1.3;
+}
+
+h1 {
+  font-size: 2.5rem;
+  margin-top: var(--space-xl);
+  margin-bottom: var(--space-lg);
+}
+
+h2 {
+  font-size: 2rem;
+  margin-top: var(--space-xl);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 2px solid var(--primary-light);
+}
+
+h3 {
+  font-size: 1.5rem;
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+
+p {
+  margin-bottom: var(--space-md);
+}
+
+/* Form Elements */
+.form-section {
+  background-color: white;
+  border-radius: var(--border-radius);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+  border: var(--border-width) solid var(--border-color);
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.form-group {
+  flex: 1 1 300px;
+  margin-bottom: var(--space-md);
+}
+
+label {
+  display: block;
+  margin-bottom: var(--space-xs);
+  font-weight: 500;
+  color: var(--gray-dark);
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius);
+  background-color: white;
+  font-family: var(--font-family-main);
+  font-size: 0.95rem;
+  transition: border-color var(--transition-speed), box-shadow var(--transition-speed);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+  user-select: none;
+  border: 1px solid transparent;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: var(--border-radius);
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out,
+    border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.btn:focus {
+  outline: none;
+}
+
+.btn-primary {
+  color: white;
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+.btn-success {
+  color: white;
+  background-color: var(--success);
+  border-color: var(--success);
+}
+
+.btn-success:hover {
+  background-color: #218838;
+  border-color: #1e7e34;
+}
+
+.btn-danger {
+  color: white;
+  background-color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.btn-secondary {
+  color: white;
+  background-color: var(--gray);
+  border-color: var(--gray);
+}
+
+.btn-secondary:hover {
+  background-color: var(--gray-dark);
+  border-color: var(--gray-dark);
+}
+
+.btn-outline {
+  color: var(--primary);
+  background-color: transparent;
+  border-color: var(--primary);
+}
+
+.btn-outline:hover {
+  color: white;
+  background-color: var(--primary);
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.btn-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.1rem;
+}
+
+/* Nested form elements like storage and secrets */
+.nested-form-item {
+  background-color: #f8f9fa;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  position: relative;
+}
+
+.remove-btn {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: transform var(--transition-speed);
+}
+
+.remove-btn:hover {
+  transform: scale(1.1);
+}
+
+.add-btn {
+  background-color: #f8f9fa;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--space-md);
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-speed);
+  margin-bottom: var(--space-lg);
+}
+
+.add-btn:hover {
+  background-color: #e9ecef;
+  border-color: var(--primary);
+}
+
+/* Status bar styling */
+.status-bar {
+  border-radius: var(--border-radius);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.status-success {
+  background-color: #e8f5e9;
+  border-left: 4px solid var(--success);
+  color: #1b5e20;
+}
+
+.status-error {
+  background-color: #ffebee;
+  border-left: 4px solid var(--danger);
+  color: #b71c1c;
+}
+
+.status-warning {
+  background-color: #fff8e1;
+  border-left: 4px solid var(--warning);
+  color: #f57f17;
+}
+
+/* YAML Output styling */
+.yaml-output {
+  margin-top: var(--space-lg);
+}
+
+pre {
+  background-color: #f8f9fa;
+  border-radius: var(--border-radius);
+  padding: var(--space-lg);
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  margin-bottom: var(--space-md);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-height: 400px;
+}
+
+.copy-deploy-buttons {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+/* Loading Spinner */
+.loader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.loader {
+  border: 4px solid rgba(0, 102, 204, 0.1);
+  border-left-color: var(--primary);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--space-md);
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Media Queries for Responsive Design */
+@media (max-width: 768px) {
+  .form-row {
+    flex-direction: column;
+  }
+
+  .form-group {
+    flex: 1 1 100%;
+  }
+
+  .user-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+}
+
+/* Login Page Specific Styles */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  text-align: center;
+}
+
+.login-container h1 {
+  margin-bottom: var(--space-lg);
+}
+
+.login-container p {
+  margin-bottom: var(--space-xl);
+  max-width: 600px;
+}
+
+/* Transitions and Animations */
+.fade-in {
+  animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Tooltip Styles */
+.tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip .tooltip-text {
+  visibility: hidden;
+  width: 200px;
+  background-color: var(--dark);
+  color: white;
+  text-align: center;
+  border-radius: var(--border-radius);
+  padding: var(--space-sm);
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  margin-left: -100px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.tooltip:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Dark Mode Styles - Optional for future use */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1e1e1e;
+    --text: #e0e0e0;
+    --primary: #4d94ff;
+    --primary-dark: #0066cc;
+    --primary-light: #80b3ff;
+    --border-color: #444;
+    --gray-light: #444;
+    --gray-dark: #ccc;
+  }
+
+  /* Additional dark mode overrides would go here */
+}
