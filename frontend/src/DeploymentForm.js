@@ -4,7 +4,7 @@ import { useAuth } from "./AuthProvider";
 
 const cpuOptions = ["250m", "500m", "750m", "1"];
 const memoryOptions = ["256Mi", "512Mi", "1Gi", "2Gi"];
-const routeDomains = ["apps.okd.science.internal", "science.xyz"];
+const routeDomains = ["apps.okd.science.internal", "int.science.xyz"];
 
 // Default fallback storage classes in case the API fails
 const fallbackStorageClasses = [
@@ -242,7 +242,8 @@ const DeploymentForm = () => {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '20px' }}>
+      <div className="loader-container fade-in">
+        <div className="loader"></div>
         <h3>Loading cluster data...</h3>
         <p>Connecting to OpenShift cluster...</p>
       </div>
@@ -250,20 +251,11 @@ const DeploymentForm = () => {
   }
 
   return (
-    <div>
+    <div className="fade-in">
       <h2>Deploy a New Application</h2>
 
       {/* Status bar with connection info and refresh button */}
-      <div style={{
-        backgroundColor: clusterConnected ? '#d4edda' : '#f8d7da',
-        color: clusterConnected ? '#155724' : '#721c24',
-        padding: '10px',
-        borderRadius: '5px',
-        marginBottom: '15px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
+      <div className={`status-bar ${clusterConnected ? 'status-success' : 'status-error'}`}>
         <span>
           {clusterConnected ?
             `Connected to OpenShift cluster (${namespaces.length} namespaces, ${storageClasses.length} storage classes available)` :
@@ -272,199 +264,349 @@ const DeploymentForm = () => {
         </span>
         <button
           onClick={handleRefresh}
-          style={{
-            padding: '5px 10px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
+          className="btn btn-primary btn-sm"
         >
           Refresh Cluster Data
         </button>
       </div>
 
       <form onSubmit={handleSubmit}>
-        {/* Row 1: Namespace and Container Image */}
-        <div>
-          <label>Namespace: </label>
-          {createNewNamespace ? (
+        {/* General Info Section */}
+        <div className="form-section">
+          <h3>Basic Configuration</h3>
+
+          {/* Row 1: Namespace and Container Image */}
+          <div className="form-row">
+            <div className="form-group">
+              <label>Namespace:</label>
+              {createNewNamespace ? (
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <input
+                    type="text"
+                    value={namespace}
+                    onChange={(e) => setNamespace(e.target.value)}
+                    placeholder="Enter new namespace name"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCreateNewNamespace(false)}
+                    className="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={namespace}
+                  onChange={handleNamespaceChange}
+                  required
+                >
+                  <option value="">Select a namespace</option>
+                  {namespaces.map((ns) => (
+                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                  ))}
+                  <option value="create-new">--- Create New Namespace ---</option>
+                </select>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label>Container Image:</label>
+              <input
+                type="text"
+                value={containerImage}
+                onChange={(e) => setContainerImage(e.target.value)}
+                placeholder="e.g., nginx:latest"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Row 2: CPU and Memory Requests */}
+          <div className="form-row">
+            <div className="form-group">
+              <label>CPU Request:</label>
+              <select value={cpuRequest} onChange={(e) => setCpuRequest(e.target.value)}>
+                {cpuOptions.map((cpu) => <option key={cpu} value={cpu}>{cpu}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Memory Request:</label>
+              <select value={memoryRequest} onChange={(e) => setMemoryRequest(e.target.value)}>
+                {memoryOptions.map((mem) => <option key={mem} value={mem}>{mem}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Storage Configuration */}
+        <div className="form-section">
+          <h3>Storage Configuration</h3>
+
+          <div className="checkbox-group">
             <input
-              type="text"
-              value={namespace}
-              onChange={(e) => setNamespace(e.target.value)}
-              placeholder="Enter new namespace name"
-              required
+              type="checkbox"
+              id="storageRequired"
+              checked={storageRequired}
+              onChange={() => setStorageRequired(!storageRequired)}
             />
-          ) : (
-            <select
-              value={namespace}
-              onChange={handleNamespaceChange}
-              required
-            >
-              <option value="">Select a namespace</option>
-              {namespaces.map((ns) => (
-                <option key={ns.name} value={ns.name}>{ns.name}</option>
+            <label htmlFor="storageRequired">Requires Storage</label>
+          </div>
+
+          {storageRequired && (
+            <div>
+              {storageDetails.map((vol, index) => (
+                <div key={index} className="nested-form-item">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Volume Name:</label>
+                      <input
+                        type="text"
+                        value={vol.name}
+                        onChange={(e) => handleStorageChange(index, "name", e.target.value)}
+                        placeholder="Name for the volume"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Mount Path:</label>
+                      <input
+                        type="text"
+                        value={vol.mountPath}
+                        onChange={(e) => handleStorageChange(index, "mountPath", e.target.value)}
+                        placeholder="e.g., /data"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Size (Gi):</label>
+                      <input
+                        type="number"
+                        value={vol.size}
+                        onChange={(e) => handleStorageChange(index, "size", e.target.value)}
+                        placeholder="e.g., 10"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Storage Class:</label>
+                      <select
+                        value={vol.storageClass}
+                        onChange={(e) => handleStorageChange(index, "storageClass", e.target.value)}
+                      >
+                        {storageClasses.length > 0 ? (
+                          storageClasses.map((sc) => (
+                            <option key={sc.name} value={sc.name}>
+                              {sc.name} {sc.isDefault ? "(Default)" : ""}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">No storage classes available</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    onClick={() => removeStorage(index)}
+                  >
+                    &times;
+                  </button>
+                </div>
               ))}
-              <option value="create-new">--- Create New Namespace ---</option>
-            </select>
-          )}
 
-          {createNewNamespace && (
-            <button
-              type="button"
-              onClick={() => setCreateNewNamespace(false)}
-              style={{ marginLeft: "10px" }}
-            >
-              Cancel
-            </button>
-          )}
-
-          <label style={{ marginLeft: "20px" }}> Container Image: </label>
-          <input type="text" value={containerImage} onChange={(e) => setContainerImage(e.target.value)} required />
-        </div>
-
-        {/* Row 2: CPU and Memory Requests */}
-        <div>
-          <label>CPU Request: </label>
-          <select value={cpuRequest} onChange={(e) => setCpuRequest(e.target.value)}>
-            {cpuOptions.map((cpu) => <option key={cpu} value={cpu}>{cpu}</option>)}
-          </select>
-
-          <label> Memory Request: </label>
-          <select value={memoryRequest} onChange={(e) => setMemoryRequest(e.target.value)}>
-            {memoryOptions.map((mem) => <option key={mem} value={mem}>{mem}</option>)}
-          </select>
-        </div>
-
-        {/* Row 3: Storage Configuration */}
-        <div>
-          <label>
-            <input type="checkbox" checked={storageRequired} onChange={() => setStorageRequired(!storageRequired)} /> Requires Storage
-          </label>
-
-          {storageRequired && storageDetails.map((vol, index) => (
-            <div key={index} style={{ marginBottom: "10px", border: "1px solid #ccc", padding: "10px", borderRadius: "5px" }}>
-              <label>Name: </label>
-              <input type="text" value={vol.name} onChange={(e) => handleStorageChange(index, "name", e.target.value)} />
-
-              <label> Mount Path: </label>
-              <input type="text" value={vol.mountPath} onChange={(e) => handleStorageChange(index, "mountPath", e.target.value)} />
-
-              <label> Size (Gi): </label>
-              <input type="number" value={vol.size} onChange={(e) => handleStorageChange(index, "size", e.target.value)} />
-
-              <label> Storage Class: </label>
-              <select value={vol.storageClass} onChange={(e) => handleStorageChange(index, "storageClass", e.target.value)}>
-                {storageClasses.length > 0 ? (
-                  storageClasses.map((sc) => (
-                    <option key={sc.name} value={sc.name}>
-                      {sc.name} {sc.isDefault ? "(Default)" : ""}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No storage classes available</option>
-                )}
-              </select>
-
-              <button type="button" onClick={() => removeStorage(index)} style={{ marginLeft: "10px", color: "red" }}>Remove</button>
+              <button
+                type="button"
+                onClick={addStorage}
+                disabled={!storageClasses.length}
+                className="add-btn"
+              >
+                + Add Volume
+              </button>
             </div>
-          ))}
-          <button type="button" onClick={addStorage} disabled={!storageClasses.length}>Add Volume</button>
+          )}
         </div>
 
-        {/* Row 4: Secrets Configuration */}
-        <div>
-          <label>
-            <input type="checkbox" checked={secretsRequired} onChange={() => setSecretsRequired(!secretsRequired)} /> Requires Secrets
-          </label>
+        {/* Secrets Configuration */}
+        <div className="form-section">
+          <h3>Secrets Configuration</h3>
 
-          {secretsRequired && secretsDetails.map((secret, index) => (
-            <div key={index} style={{ marginBottom: "10px", border: "1px solid #ccc", padding: "10px", borderRadius: "5px" }}>
-              <label>Secret Name: </label>
-              <input type="text" value={secret.name} onChange={(e) => handleSecretChange(index, "name", e.target.value)} />
+          <div className="checkbox-group">
+            <input
+              type="checkbox"
+              id="secretsRequired"
+              checked={secretsRequired}
+              onChange={() => setSecretsRequired(!secretsRequired)}
+            />
+            <label htmlFor="secretsRequired">Requires Secrets</label>
+          </div>
 
-              <label> Key: </label>
-              <input type="text" value={secret.key} onChange={(e) => handleSecretChange(index, "key", e.target.value)} />
+          {secretsRequired && (
+            <div>
+              {secretsDetails.map((secret, index) => (
+                <div key={index} className="nested-form-item">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Secret Name:</label>
+                      <input
+                        type="text"
+                        value={secret.name}
+                        onChange={(e) => handleSecretChange(index, "name", e.target.value)}
+                        placeholder="Name for the secret"
+                      />
+                    </div>
 
-              <label> Value: </label>
-              <input type="text" value={secret.value} onChange={(e) => handleSecretChange(index, "value", e.target.value)} />
+                    <div className="form-group">
+                      <label>Key:</label>
+                      <input
+                        type="text"
+                        value={secret.key}
+                        onChange={(e) => handleSecretChange(index, "key", e.target.value)}
+                        placeholder="Secret key name"
+                      />
+                    </div>
+                  </div>
 
-              <label> Mount Type: </label>
-              <select value={secret.mountType} onChange={(e) => handleSecretChange(index, "mountType", e.target.value)}>
-                <option value="env">Environment Variable</option>
-                <option value="volume">Volume Mount</option>
-              </select>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Value:</label>
+                      <input
+                        type="text"
+                        value={secret.value}
+                        onChange={(e) => handleSecretChange(index, "value", e.target.value)}
+                        placeholder="Secret value"
+                      />
+                    </div>
 
-              {secret.mountType === "env" && (
-                <>
-                  <label> Env Variable Name: </label>
-                  <input
-                    type="text"
-                    value={secret.envName || ""}
-                    onChange={(e) => handleSecretChange(index, "envName", e.target.value)}
-                    placeholder="Leave empty to use key name"
-                  />
-                </>
-              )}
+                    <div className="form-group">
+                      <label>Mount Type:</label>
+                      <select
+                        value={secret.mountType}
+                        onChange={(e) => handleSecretChange(index, "mountType", e.target.value)}
+                      >
+                        <option value="env">Environment Variable</option>
+                        <option value="volume">Volume Mount</option>
+                      </select>
+                    </div>
+                  </div>
 
-              {secret.mountType === "volume" && (
-                <>
-                  <label> Mount Path: </label>
-                  <input
-                    type="text"
-                    value={secret.mountPath || ""}
-                    onChange={(e) => handleSecretChange(index, "mountPath", e.target.value)}
-                  />
-                </>
-              )}
+                  {secret.mountType === "env" && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Env Variable Name:</label>
+                        <input
+                          type="text"
+                          value={secret.envName || ""}
+                          onChange={(e) => handleSecretChange(index, "envName", e.target.value)}
+                          placeholder="Leave empty to use key name"
+                        />
+                      </div>
+                    </div>
+                  )}
 
-              <button type="button" onClick={() => removeSecret(index)} style={{ marginLeft: "10px", color: "red" }}>Remove</button>
+                  {secret.mountType === "volume" && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Mount Path:</label>
+                        <input
+                          type="text"
+                          value={secret.mountPath || ""}
+                          onChange={(e) => handleSecretChange(index, "mountPath", e.target.value)}
+                          placeholder="Path to mount the secret at"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    onClick={() => removeSecret(index)}
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={addSecret}
+                className="add-btn"
+              >
+                + Add Secret
+              </button>
             </div>
-          ))}
-          <button type="button" onClick={addSecret}>Add Secret</button>
+          )}
         </div>
 
-        {/* Row 5: Network Configuration */}
-        <div>
-          <label>Container Port: </label>
-          <input type="number" value={containerPort} onChange={(e) => setContainerPort(e.target.value)} required />
+        {/* Network Configuration Section */}
+        <div className="form-section">
+          <h3>Network Configuration</h3>
 
-          <label>
-            <input type="checkbox" checked={exposeRoute} onChange={() => setExposeRoute(!exposeRoute)} /> Expose Route
-          </label>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Container Port:</label>
+              <input
+                type="number"
+                value={containerPort}
+                onChange={(e) => setContainerPort(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <div className="checkbox-group">
+                <input
+                  type="checkbox"
+                  id="exposeRoute"
+                  checked={exposeRoute}
+                  onChange={() => setExposeRoute(!exposeRoute)}
+                />
+                <label htmlFor="exposeRoute">Expose Route</label>
+              </div>
+            </div>
+          </div>
 
           {exposeRoute && (
-            <>
-              <label> Route Port: </label>
-              <select value={routePort} onChange={(e) => setRoutePort(e.target.value)}>
-                <option value="80">Port 80</option>
-                <option value="443">Port 443 (SSL)</option>
-              </select>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Route Port:</label>
+                <select value={routePort} onChange={(e) => setRoutePort(e.target.value)}>
+                  <option value="80">Port 80</option>
+                  <option value="443">Port 443 (SSL)</option>
+                </select>
+              </div>
 
-              <label> Hostname: </label>
-              <input type="text" value={routeHostname} onChange={(e) => setRouteHostname(e.target.value)} placeholder="Enter subdomain" />
+              <div className="form-group">
+                <label>Hostname:</label>
+                <input
+                  type="text"
+                  value={routeHostname}
+                  onChange={(e) => setRouteHostname(e.target.value)}
+                  placeholder="Enter subdomain"
+                />
+              </div>
 
-              <label> Domain: </label>
-              <select value={routeDomain} onChange={(e) => setRouteDomain(e.target.value)}>
-                {routeDomains.map((domain) => <option key={domain} value={domain}>{domain}</option>)}
-              </select>
-            </>
+              <div className="form-group">
+                <label>Domain:</label>
+                <select value={routeDomain} onChange={(e) => setRouteDomain(e.target.value)}>
+                  {routeDomains.map((domain) => <option key={domain} value={domain}>{domain}</option>)}
+                </select>
+              </div>
+            </div>
           )}
         </div>
 
         <button
           type="submit"
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#28a745',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            margin: '20px 0',
-            cursor: 'pointer'
-          }}
+          className="btn btn-primary btn-lg"
+          style={{ marginBottom: '2rem' }}
         >
           Generate YAML
         </button>
@@ -472,44 +614,30 @@ const DeploymentForm = () => {
 
       {/* Display YAML Output */}
       {generatedYaml && (
-      <div>
-        <h3>Generated YAML</h3>
-        <pre style={{ background: "#f4f4f4", padding: "10px", borderRadius: "5px", overflowX: "auto" }}>
-          {generatedYaml}
-        </pre>
-        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-          <button
-            onClick={copyToClipboard}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#007BFF',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer'
-            }}
-          >
-            Copy YAML
-          </button>
+        <div className="yaml-output fade-in">
+          <h3>Generated YAML</h3>
+          <pre>
+            {generatedYaml}
+          </pre>
+          <div className="copy-deploy-buttons">
+            <button
+              onClick={copyToClipboard}
+              className="btn btn-primary"
+            >
+              Copy YAML
+            </button>
 
-          <button
-            onClick={deployToOKD}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#28a745',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer'
-            }}
-          >
-            Deploy to OKD
-          </button>
+            <button
+              onClick={deployToOKD}
+              className="btn btn-success"
+            >
+              Deploy to OKD
+            </button>
+          </div>
         </div>
-      </div>
-    )}
-  </div>
-);
+      )}
+    </div>
+  );
 };
 
 export default DeploymentForm;
