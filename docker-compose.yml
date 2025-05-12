@@ -11,3 +11,4 @@ services:
       - OKD_CLUSTER_API=
       - OKD_SERVICE_ACCOUNT_TOKEN=
       - ADMIN_ROLE_NAME=
+      - ROUTE_DOMAINS=
