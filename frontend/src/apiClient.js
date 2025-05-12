@@ -60,6 +60,38 @@ export const useApiClient = () => {
 
     // API methods
     const methods = {
+        // Check if the user has admin role
+        checkAdminAccess: () => {
+            console.log("Checking admin access");
+            return apiClient.get("/api/check-admin")
+                .then(response => response)
+                .catch(error => {
+                    console.error("Admin access check error:", error);
+                    return {
+                        data: {
+                            status: "error",
+                            message: error.response?.data?.message || error.message || "Access denied"
+                        }
+                    };
+                });
+        },
+
+        // Debug token claims
+        debugToken: () => {
+            console.log("Debugging token claims");
+            return apiClient.get("/api/debug-token")
+                .then(response => response)
+                .catch(error => {
+                    console.error("Token debug error:", error);
+                    return {
+                        data: {
+                            status: "error",
+                            message: error.response?.data?.message || error.message || "Debug failed"
+                        }
+                    };
+                });
+        },
+
         // Check authentication with OpenShift
         authenticate: () => {
             console.log("Checking authentication status");

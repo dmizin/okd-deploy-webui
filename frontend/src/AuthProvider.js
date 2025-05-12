@@ -16,6 +16,7 @@ export const AuthProvider = ({ children }) => {
 
   const [accessToken, setAccessToken] = useState(null);
   const [userRoles, setUserRoles] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const getToken = async () => {
@@ -26,9 +27,23 @@ export const AuthProvider = ({ children }) => {
             setAccessToken(claims.__raw);
 
             // Extract roles from JWT claims using environment variable for namespace
-            const namespace = window._env_?.REACT_APP_AUTH0_NAMESPACE || [];
-            const roles = claims[namespace] || [];
-            setUserRoles(Array.isArray(roles) ? roles : []);
+            const namespace = window._env_?.REACT_APP_AUTH0_NAMESPACE || '';
+
+            // Try both formats: "namespace" and "namespace_roles"
+            const namespaceRoles = `${namespace}_roles`;
+            let roles = claims[namespace] || claims[namespaceRoles] || [];
+            const rolesArray = Array.isArray(roles) ? roles : [];
+            setUserRoles(rolesArray);
+
+            // Check if user has admin role
+            const adminRoleName = window._env_?.REACT_APP_ADMIN_ROLE_NAME;
+            setIsAdmin(rolesArray.includes(adminRoleName));
+
+            console.log('User claims:', claims);
+            console.log('Looking for roles in namespace:', namespace, 'or', namespaceRoles);
+            console.log('User roles found:', rolesArray);
+            console.log('Admin role name:', adminRoleName);
+            console.log('Is admin:', rolesArray.includes(adminRoleName));
           }
         } catch (error) {
           console.error("Error getting token claims:", error);
@@ -36,6 +51,7 @@ export const AuthProvider = ({ children }) => {
       } else {
         setAccessToken(null);
         setUserRoles([]);
+        setIsAdmin(false);
       }
     };
 
@@ -52,6 +68,7 @@ export const AuthProvider = ({ children }) => {
     user,
     accessToken,
     userRoles,
+    isAdmin,
     isLoading
   };
 
@@ -69,4 +86,23 @@ export const useAuth = () => {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
+};
+
+// Optional component for protecting admin routes
+export const RequireAdmin = ({ children, fallback }) => {
+  const { isAdmin, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="loader-container">
+      <div className="loader"></div>
+      <p>Checking permissions...</p>
+    </div>;
+  }
+
+  return isAdmin ? children : (fallback ||
+    <div className="access-denied">
+      <h2>Access Denied</h2>
+      <p>You do not have the required admin privileges to access this resource.</p>
+    </div>
+  );
 };
