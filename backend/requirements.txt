@@ -4,3 +4,4 @@ python-jose
 requests
 gunicorn
 pyyaml
+pyjwt

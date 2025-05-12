@@ -3,7 +3,10 @@ import os
 import json
 import logging
 import subprocess
-from flask import Flask, request, jsonify, send_from_directory, make_response
+import jwt
+from functools import wraps
+from flask import Flask, request, jsonify, send_from_directory, make_response, abort
+
 from flask_cors import CORS
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -24,6 +27,101 @@ logger = logging.getLogger(__name__)
 # Load OpenShift Cluster details from environment variables (from docker-compose)
 OKD_CLUSTER_API = os.getenv("OKD_CLUSTER_API", "https://missing-cluster-api.com")
 OKD_SERVICE_ACCOUNT_TOKEN = os.getenv("OKD_SERVICE_ACCOUNT_TOKEN", "missing-cluster-sa-token")
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
+API_IDENTIFIER = os.getenv("API_IDENTIFIER", "")
+AUTH0_NAMESPACE = os.getenv("AUTH0_NAMESPACE", "")
+ADMIN_ROLE_NAME = os.getenv("ADMIN_ROLE_NAME", "")
+
+# JWT auth validation
+def get_token_auth_header():
+    """Get the access token from the header"""
+    auth = request.headers.get("Authorization", None)
+    if not auth:
+        logger.warning("Authorization header is missing")
+        return None
+
+    parts = auth.split()
+    if parts[0].lower() != "bearer":
+        logger.warning("Authorization header must start with Bearer")
+        return None
+    elif len(parts) == 1:
+        logger.warning("Token not found")
+        return None
+    elif len(parts) > 2:
+        logger.warning("Authorization header must be Bearer token")
+        return None
+
+    token = parts[1]
+    return token
+
+def requires_auth(f):
+    """Determines if the access token is valid"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = get_token_auth_header()
+        if not token:
+            logger.warning("No auth token provided")
+            return jsonify({"status": "error", "message": "Authentication required"}), 401
+
+        try:
+            # This is a lightweight verification that the token is well-formed
+            # For production, you should verify the token with Auth0
+            jwt_payload = jwt.decode(token, options={"verify_signature": False})
+            return f(*args, **kwargs)
+        except jwt.ExpiredSignatureError:
+            logger.warning("Token expired")
+            return jsonify({"status": "error", "message": "Token is expired"}), 401
+        except jwt.InvalidTokenError:
+            logger.warning("Invalid token")
+            return jsonify({"status": "error", "message": "Invalid token"}), 401
+
+    return decorated
+
+def requires_admin(f):
+    """Determines if the user has admin role"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = get_token_auth_header()
+        if not token:
+            logger.warning("No auth token provided")
+            return jsonify({"status": "error", "message": "Authentication required"}), 401
+
+        try:
+            # This is a lightweight verification that the token contains the admin role
+            # For production, you should verify the token with Auth0
+            jwt_payload = jwt.decode(token, options={"verify_signature": False})
+
+            # Check if user has admin role in either format
+            namespace = AUTH0_NAMESPACE
+            namespace_roles = f"{namespace}_roles"
+
+            # Try both formats: plain namespace and namespace_roles
+            roles = jwt_payload.get(namespace, []) or jwt_payload.get(namespace_roles, [])
+            if not isinstance(roles, list):
+                roles = []
+
+            logger.info(f"User roles: {roles}, Admin role: {ADMIN_ROLE_NAME}")
+            logger.info(f"Checking for roles in: {namespace} or {namespace_roles}")
+
+            if ADMIN_ROLE_NAME not in roles:
+                logger.warning(f"User does not have admin role ({ADMIN_ROLE_NAME})")
+                return jsonify({
+                    "status": "error",
+                    "message": f"Access denied. Admin privileges required ({ADMIN_ROLE_NAME})."
+                }), 403
+
+            return f(*args, **kwargs)
+        except jwt.ExpiredSignatureError:
+            logger.warning("Token expired")
+            return jsonify({"status": "error", "message": "Token is expired"}), 401
+        except jwt.InvalidTokenError:
+            logger.warning("Invalid token")
+            return jsonify({"status": "error", "message": "Invalid token"}), 401
+        except Exception as e:
+            logger.error(f"Error in admin role check: {str(e)}", exc_info=True)
+            return jsonify({"status": "error", "message": f"Authentication error: {str(e)}"}), 500
+
+    return decorated
 
 
 @app.route("/")
@@ -34,6 +132,8 @@ def serve_frontend():
 
 
 @app.route("/generate-yaml", methods=["POST"])
+@requires_auth
+@requires_admin
 def generate_yaml_api():
     """ API to generate YAML from frontend input """
     try:
@@ -52,6 +152,8 @@ def generate_yaml_api():
 
 
 @app.route("/deploy-to-okd", methods=["POST"])
+@requires_auth
+@requires_admin
 def deploy_to_okd():
     """ API to deploy YAML to OpenShift """
     try:
@@ -88,6 +190,7 @@ def deploy_to_okd():
 
 
 @app.route("/api/cluster-data", methods=["GET"])
+@requires_auth
 def fetch_cluster_data():
     """ API to fetch both namespaces and storage classes in a single call """
     logger.info("Fetching all cluster data (namespaces and storage classes)")
@@ -130,6 +233,7 @@ def fetch_cluster_data():
 
 
 @app.route("/api/namespaces", methods=["GET"])
+@requires_auth
 def fetch_namespaces():
     """ API to fetch non-system namespaces from the OpenShift cluster """
     logger.info("Fetching namespaces from OpenShift cluster")
@@ -150,6 +254,7 @@ def fetch_namespaces():
 
 
 @app.route("/api/storage-classes", methods=["GET"])
+@requires_auth
 def fetch_storage_classes():
     """ API to fetch available storage classes from the OpenShift cluster """
     logger.info("Fetching storage classes from OpenShift cluster")
@@ -170,6 +275,7 @@ def fetch_storage_classes():
 
 
 @app.route("/api/authenticate", methods=["GET"])
+@requires_auth
 def check_authentication():
     """ API to test authentication to the OpenShift cluster """
     logger.info("Testing authentication to OpenShift cluster")
@@ -186,6 +292,54 @@ def check_authentication():
         return jsonify({"status": "error", "message": f"Unexpected error: {str(e)}"}), 500
 
 
+@app.route("/api/check-admin", methods=["GET"])
+@requires_auth
+@requires_admin
+def check_admin_access():
+    """ API to check if the current user has admin access """
+    return jsonify({
+        "status": "success",
+        "message": "You have admin access",
+        "role": ADMIN_ROLE_NAME
+    })
+
+
+@app.route("/api/debug-token", methods=["GET"])
+@requires_auth
+def debug_token():
+    """ Debug endpoint to check JWT token claims """
+    token = get_token_auth_header()
+    if not token:
+        return jsonify({"status": "error", "message": "No token provided"}), 400
+
+    try:
+        # Decode the token without verification
+        payload = jwt.decode(token, options={"verify_signature": False})
+
+        # Extract roles information for debugging
+        namespace = AUTH0_NAMESPACE
+        namespace_roles = f"{namespace}_roles"
+
+        roles_plain = payload.get(namespace, [])
+        roles_with_suffix = payload.get(namespace_roles, [])
+
+        debug_info = {
+            "status": "success",
+            "admin_role_name": ADMIN_ROLE_NAME,
+            "namespace": namespace,
+            "namespace_roles": namespace_roles,
+            "roles_plain_namespace": roles_plain,
+            "roles_with_suffix": roles_with_suffix,
+            "is_admin": ADMIN_ROLE_NAME in (roles_plain or roles_with_suffix),
+            "payload": {k: v for k, v in payload.items() if k not in ["aud", "iss"]}  # Filter out some standard claims
+        }
+
+        return jsonify(debug_info)
+    except Exception as e:
+        logger.error(f"Error decoding token: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Token decode error: {str(e)}"}), 500
+
+
 # Catch-all route to serve React frontend
 @app.route("/<path:path>")
 def static_proxy(path):
@@ -198,6 +352,10 @@ def static_proxy(path):
 
 if __name__ == "__main__":
     logger.info("Starting OKD Deployment App...")
+    logger.info(f"Admin role configured as: '{ADMIN_ROLE_NAME}'")
+
+    if not AUTH0_DOMAIN or not API_IDENTIFIER or not AUTH0_NAMESPACE:
+        logger.warning("Auth0 configuration missing. Authentication may not work properly.")
 
     # Try to authenticate at startup
     if authenticate_to_okd():

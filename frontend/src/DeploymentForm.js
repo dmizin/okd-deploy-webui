@@ -18,8 +18,9 @@ const DeploymentForm = () => {
   const apiClient = useApiClient();
   const { isAuthenticated } = useAuth();
 
-  // Use a ref to track initialization state to prevent double fetching
+// Use a ref to track initialization state to prevent double fetching
   const initialized = useRef(false);
+  const [adminAccessChecked, setAdminAccessChecked] = useState(false);
 
   const [namespace, setNamespace] = useState("");
   const [containerImage, setContainerImage] = useState("");
@@ -101,14 +102,33 @@ const DeploymentForm = () => {
     }
   }, [isAuthenticated, apiClient, storageClasses.length]);
 
-  // Initial authentication and data fetch
-  useEffect(() => {
-    if (isAuthenticated && !initialized.current) {
-      initialized.current = true;
-      console.log("Initial cluster data fetch");
-      fetchClusterData();
-    }
-  }, [isAuthenticated, fetchClusterData]);
+// Initial authentication and data fetch
+useEffect(() => {
+  if (isAuthenticated && !initialized.current) {
+    initialized.current = true;
+    console.log("Initial cluster data fetch");
+
+    // Check admin access first
+    apiClient.checkAdminAccess()
+      .then(response => {
+        setAdminAccessChecked(true);
+        if (response.data?.status === "success") {
+          console.log("Admin access verified");
+          fetchClusterData();
+        } else {
+          console.error("Admin access denied:", response.data?.message);
+          setError("Admin access denied: " + (response.data?.message || "Insufficient permissions"));
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        console.error("Error checking admin access:", err);
+        setAdminAccessChecked(true);
+        setError("Error checking admin permissions: " + err.message);
+        setLoading(false);
+      });
+  }
+}, [isAuthenticated, fetchClusterData, apiClient]);
 
   // Function to add a new storage volume
   const addStorage = () => {

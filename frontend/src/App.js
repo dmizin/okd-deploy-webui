@@ -1,12 +1,72 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import DeploymentForm from './DeploymentForm';
-import { AuthProvider, useAuth } from './AuthProvider';
+import { AuthProvider, useAuth, RequireAdmin } from './AuthProvider';
+import { useApiClient } from './apiClient';
 import './styles.css'; // Import our new stylesheet
+
+// Debug Panel for troubleshooting auth issues
+const DebugPanel = () => {
+  const [tokenInfo, setTokenInfo] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const apiClient = useApiClient();
+
+  const debugAuth = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.debugToken();
+      setTokenInfo(response.data);
+    } catch (error) {
+      console.error("Debug error:", error);
+      setTokenInfo({ error: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="debug-panel">
+      <h3>Auth Troubleshooting</h3>
+      <button onClick={debugAuth} className="btn btn-secondary" disabled={loading}>
+        {loading ? "Loading..." : "Debug Auth Token"}
+      </button>
+
+      {tokenInfo && (
+        <div className="debug-results">
+          <h4>Token Debug Info:</h4>
+          <pre>{JSON.stringify(tokenInfo, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Access Denied component
+const AccessDenied = () => {
+  const [showDebug, setShowDebug] = useState(false);
+
+  return (
+    <div className="access-denied-container">
+      <h2>Access Denied</h2>
+      <p>
+        You do not have the required permissions to access this application.
+        Please contact your administrator if you believe this is an error.
+      </p>
+      <button
+        onClick={() => setShowDebug(!showDebug)}
+        className="btn btn-outline"
+      >
+        {showDebug ? "Hide Troubleshooting" : "Show Troubleshooting"}
+      </button>
+
+      {showDebug && <DebugPanel />}
+    </div>
+  );
+};
 
 // Main application component
 const AppContent = () => {
-  const { isLoading, isAuthenticated, loginWithRedirect, logout, user } = useAuth();
+  const { isLoading, isAuthenticated, loginWithRedirect, logout, user, isAdmin } = useAuth();
 
   if (isLoading) {
     return (
@@ -40,6 +100,7 @@ const AppContent = () => {
               <h1 className="app-title">OKD WebUI</h1>
               <div className="user-section">
                 <span>Welcome, {user?.name || 'User'}</span>
+                {isAdmin && <span className="admin-badge">Admin</span>}
                 <button
                   onClick={() => logout({ returnTo: window.location.origin })}
                   className="btn btn-outline btn-sm"
@@ -50,7 +111,9 @@ const AppContent = () => {
             </div>
           </header>
           <main className="app-container">
-            <DeploymentForm />
+            <RequireAdmin fallback={<AccessDenied />}>
+              <DeploymentForm />
+            </RequireAdmin>
           </main>
         </>
       )}
