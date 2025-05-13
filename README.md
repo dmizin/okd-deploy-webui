@@ -30,8 +30,5 @@ Make sure you add all those as env_var values to docker-compose or create secret
       - OKD_SERVICE_ACCOUNT_TOKEN=
       - ADMIN_ROLE_NAME=
 ```
-```
-# openshift/okd deployment
 
-```
 
