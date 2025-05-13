@@ -7,7 +7,7 @@ export const useApiClient = () => {
     const { accessToken } = auth || {};
 
     // Create API client with base URL
-    const baseURL = window._env_?.REACT_APP_API_URL || process.env.REACT_APP_API_URL || "http://localhost:5000";
+    const baseURL = window._env_?.REACT_APP_API_URL || process.env.REACT_APP_API_URL;
     const apiClient = axios.create({
         baseURL,
         timeout: 15000, // 15 second timeout - OKD commands might take time

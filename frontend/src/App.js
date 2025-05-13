@@ -102,11 +102,11 @@ const AppContent = () => {
                 <span>Welcome, {user?.name || 'User'}</span>
                 {isAdmin && <span className="admin-badge">Admin</span>}
                 <button
-                  onClick={() => logout({ returnTo: window.location.origin })}
-                  className="btn btn-outline btn-sm"
-                >
-                  Log out
-                </button>
+                onClick={() => logout()}
+                className="btn btn-outline btn-sm"
+              >
+                Log out
+              </button>
               </div>
             </div>
           </header>
