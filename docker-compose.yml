@@ -9,6 +9,7 @@ services:
       - API_IDENTIFIER=
       - AUTH0_NAMESPACE=
       - REACT_APP_CLIENT_ID=
+      - REACT_APP_API_URL=/
       - OKD_CLUSTER_API=
       - OKD_SERVICE_ACCOUNT_TOKEN=
       - ADMIN_ROLE_NAME=
