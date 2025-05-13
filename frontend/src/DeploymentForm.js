@@ -4,14 +4,24 @@ import { useAuth } from "./AuthProvider";
 
 const cpuOptions = ["250m", "500m", "750m", "1"];
 const memoryOptions = ["256Mi", "512Mi", "1Gi", "2Gi"];
-const routeDomains = ["apps.okd.science.internal", "int.science.xyz"];
+// Get route domains from environment variables
+const getRouteDomains = () => {
+  const defaultDomains = ["route_domains_not_found_in_env_var"];
+  if (!window._env_ || !window._env_.REACT_APP_ROUTE_DOMAINS) {
+    console.warn("Route domains not found in environment variables. Using defaults.");
+    return defaultDomains;
+  }
+
+  // Split the comma-separated string into an array
+  return window._env_.REACT_APP_ROUTE_DOMAINS.split(',').map(domain => domain.trim());
+};
+
+// Use this function to get route domains
+const routeDomains = getRouteDomains();
 
 // Default fallback storage classes in case the API fails
 const fallbackStorageClasses = [
-  { name: "csi-rbd-fast-sc", isDefault: true },
-  { name: "csi-rbd-fast-sc-retain", isDefault: false },
-  { name: "csi-rbd-sc", isDefault: false },
-  { name: "csi-rbd-sc-retain", isDefault: false }
+  { name: "cs_not_pulled_from_cluster_refresh", isDefault: true }
 ];
 
 const DeploymentForm = () => {
