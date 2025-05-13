@@ -60,17 +60,44 @@ export const AuthProvider = ({ children }) => {
     }
   }, [isAuthenticated, getIdTokenClaims, isLoading]);
 
-  // Value to be provided by the context
-  const contextValue = {
-    isAuthenticated,
-    loginWithRedirect,
-    logout,
-    user,
-    accessToken,
-    userRoles,
-    isAdmin,
-    isLoading
-  };
+const getRedirectUrl = () => {
+  // Use API URL for redirection if available
+  if (window._env_?.REACT_APP_API_URL) {
+    const apiUrl = window._env_.REACT_APP_API_URL;
+
+    // If API URL is a relative path ("/"), we need to combine it with origin
+    if (apiUrl.startsWith("/")) {
+      return `${window.location.origin}${apiUrl === "/" ? "" : apiUrl}`;
+    }
+
+    return apiUrl;
+  }
+
+  // Otherwise fallback to current origin
+  return window.location.origin;
+};
+
+// Create a wrapper for the logout function
+const logoutWithRedirect = () => {
+  const redirectUrl = getRedirectUrl();
+  console.log('Logout redirecting to:', redirectUrl);
+  logout({
+    logoutParams: {
+      returnTo: redirectUrl
+    }
+  });
+};
+
+const contextValue = {
+  isAuthenticated,
+  loginWithRedirect,
+  logout: logoutWithRedirect,
+  user,
+  accessToken,
+  userRoles,
+  isAdmin,
+  isLoading
+};
 
   return (
     <AuthContext.Provider value={contextValue}>

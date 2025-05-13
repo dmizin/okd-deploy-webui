@@ -26,9 +26,12 @@ Make sure you add all those as env_var values to docker-compose or create secret
       - AUTH0_DOMAIN=
       - API_IDENTIFIER=
       - AUTH0_NAMESPACE=
+      - REACT_APP_CLIENT_ID=
+      - REACT_APP_API_URL=http://localhost:5000/
       - OKD_CLUSTER_API=
       - OKD_SERVICE_ACCOUNT_TOKEN=
       - ADMIN_ROLE_NAME=
+      - ROUTE_DOMAINS=
+      - KUBECONFIG=                 # default is ~/.kube/config - set here to overwrite
+      - HOME=/app                   # if using HOME location for .kube/config - point to writable directory
 ```
-
-

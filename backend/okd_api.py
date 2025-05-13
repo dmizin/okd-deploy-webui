@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 OKD_CLUSTER_API = os.getenv("OKD_CLUSTER_API", "https://missing-cluster-api.com")
 OKD_SERVICE_ACCOUNT_TOKEN = os.getenv("OKD_SERVICE_ACCOUNT_TOKEN", "missing-cluster-sa-token")
 
+# Set kubeconfig to writable dir. Set env_var KUBECONFIG in deployment
+kube_config = os.getenv("KUBECONFIG", os.path.expanduser("~/.kube/config"))
+kube_dir = os.path.dirname(kube_config)
+os.makedirs(kube_dir, exist_ok=True)
+
 # Global authentication state with thread safety
 class OKDSession:
     def __init__(self):
