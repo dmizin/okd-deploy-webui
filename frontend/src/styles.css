@@ -578,3 +578,102 @@ pre {
   border: none;
   color: #fff;
 }
+
+.input-error {
+    border: 1px solid #dc3545 !important;
+    background-color: #fff8f8 !important;
+}
+
+.error-message {
+    color: #dc3545;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+    display: block;
+}
+
+textarea.input-error,
+select.input-error {
+    border: 1px solid #dc3545 !important;
+    background-color: #fff8f8 !important;
+}
+
+/* Add these styles to your styles.css file */
+textarea {
+    resize: vertical;
+    min-height: 100px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    padding: 10px;
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--border-radius);
+    width: 100%;
+    transition: border-color var(--transition-speed), box-shadow var(--transition-speed);
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
+}
+
+/* Validation summary */
+.validation-summary {
+    background-color: #ffebee;
+    border-left: 4px solid var(--danger);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+    border-radius: var(--border-radius);
+}
+
+.validation-summary h4 {
+    color: var(--danger);
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
+.validation-summary ul {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+.validation-summary li {
+    margin-bottom: 0.25rem;
+}
+
+/* Tooltip for validation pattern */
+.form-group {
+    position: relative;
+}
+
+.validation-tooltip {
+    position: absolute;
+    top: 1px;
+    right: 10px;
+    color: var(--gray);
+    font-size: 1rem;
+    cursor: help;
+}
+
+.validation-tooltip .tooltip-content {
+    visibility: hidden;
+    width: 300px;
+    background-color: var(--dark);
+    color: white;
+    text-align: left;
+    border-radius: 4px;
+    padding: 10px;
+    position: absolute;
+    z-index: 10;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -150px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 0.8rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.validation-tooltip:hover .tooltip-content {
+    visibility: visible;
+    opacity: 1;
+}

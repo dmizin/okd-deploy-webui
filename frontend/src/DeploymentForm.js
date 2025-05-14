@@ -1,9 +1,38 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useApiClient } from "./apiClient";
 import { useAuth } from "./AuthProvider";
+import {
+  FormField,
+  TextareaField,
+  SelectField,
+  ValidationSummary,
+  ResourceNameTip,
+  ValidatedNameInput
+} from "./FormComponents";
 
-const cpuOptions = ["250m", "500m", "750m", "1"];
-const memoryOptions = ["256Mi", "512Mi", "1Gi", "2Gi"];
+// RFC 1123 subdomain validation pattern
+const RFC1123_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+
+// Function to validate resource names according to RFC 1123
+const validateResourceName = (name) => {
+  if (!name) return false;
+  return RFC1123_PATTERN.test(name);
+};
+
+const cpuOptions = [
+  { value: "250m", label: "250m" },
+  { value: "500m", label: "500m" },
+  { value: "750m", label: "750m" },
+  { value: "1", label: "1" }
+];
+
+const memoryOptions = [
+  { value: "256Mi", label: "256Mi" },
+  { value: "512Mi", label: "512Mi" },
+  { value: "1Gi", label: "1Gi" },
+  { value: "2Gi", label: "2Gi" }
+];
+
 // Get route domains from environment variables
 const getRouteDomains = () => {
   const defaultDomains = ["route_domains_not_found_in_env_var"];
@@ -16,8 +45,13 @@ const getRouteDomains = () => {
   return window._env_.REACT_APP_ROUTE_DOMAINS.split(',').map(domain => domain.trim());
 };
 
-// Use this function to get route domains
-const routeDomains = getRouteDomains();
+// Create domain options array for select
+const getDomainOptions = () => {
+  return getRouteDomains().map(domain => ({
+    value: domain,
+    label: domain
+  }));
+};
 
 // Default fallback storage classes in case the API fails
 const fallbackStorageClasses = [
@@ -28,19 +62,28 @@ const DeploymentForm = () => {
   const apiClient = useApiClient();
   const { isAuthenticated, user } = useAuth();
 
-// Use a ref to track initialization state to prevent double fetching
+  // Use a ref to track initialization state to prevent double fetching
   const initialized = useRef(false);
   const [adminAccessChecked, setAdminAccessChecked] = useState(false);
 
+  // Form validation state
+  const [validationErrors, setValidationErrors] = useState({});
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
+
+  // Form field states
   const [namespace, setNamespace] = useState("");
+  const [namespaceError, setNamespaceError] = useState("");
   const [containerImage, setContainerImage] = useState("");
-  const [cpuRequest, setCpuRequest] = useState(cpuOptions[0]);
-  const [memoryRequest, setMemoryRequest] = useState(memoryOptions[0]);
+  const [cpuRequest, setCpuRequest] = useState(cpuOptions[0].value);
+  const [memoryRequest, setMemoryRequest] = useState(memoryOptions[0].value);
   const [containerPort, setContainerPort] = useState(80);
   const [exposeRoute, setExposeRoute] = useState(false);
   const [routePort, setRoutePort] = useState(80);
   const [routeHostname, setRouteHostname] = useState("");
-  const [routeDomain, setRouteDomain] = useState(routeDomains[0]);
+  const [routeHostnameError, setRouteHostnameError] = useState("");
+  const [routeDomain, setRouteDomain] = useState(getRouteDomains()[0]);
+
+  // Resource configuration states
   const [storageRequired, setStorageRequired] = useState(false);
   const [storageDetails, setStorageDetails] = useState([]);
   const [secretsRequired, setSecretsRequired] = useState(false);
@@ -56,6 +99,58 @@ const DeploymentForm = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [clusterConnected, setClusterConnected] = useState(false);
+
+  // State to keep track of available secret and configmap names
+  const [secretNames, setSecretNames] = useState([]);
+  const [configmapNames, setConfigmapNames] = useState([]);
+
+  // Create namespace options for select
+  const namespaceOptions = namespaces.map(ns => ({
+    value: ns.name,
+    label: ns.name
+  }));
+
+  // Create storage class options for select
+  const storageClassOptions = storageClasses.map(sc => ({
+    value: sc.name,
+    label: `${sc.name} ${sc.isDefault ? "(Default)" : ""}`
+  }));
+
+  // Validate namespace name only when field loses focus or form is submitted
+  const validateNamespace = (isValid, name) => {
+    if (!isValid) {
+      setNamespaceError("Invalid namespace name. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.");
+      setValidationErrors(prev => ({
+        ...prev,
+        namespace: "Invalid namespace name"
+      }));
+    } else {
+      setNamespaceError("");
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.namespace;
+        return newErrors;
+      });
+    }
+  };
+
+  // Validate hostname only when field loses focus or form is submitted
+  const validateRouteHostname = (isValid, hostname) => {
+    if (!isValid) {
+      setRouteHostnameError("Invalid hostname. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.");
+      setValidationErrors(prev => ({
+        ...prev,
+        routeHostname: "Invalid hostname"
+      }));
+    } else {
+      setRouteHostnameError("");
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.routeHostname;
+        return newErrors;
+      });
+    }
+  };
 
   // Memoize the fetch function to avoid recreation on each render
   const fetchClusterData = useCallback(async () => {
@@ -114,37 +209,59 @@ const DeploymentForm = () => {
     }
   }, [isAuthenticated, apiClient, storageClasses.length]);
 
-// Initial authentication and data fetch
-useEffect(() => {
-  if (isAuthenticated && !initialized.current) {
-    initialized.current = true;
-    console.log("Initial cluster data fetch");
+  // Initial authentication and data fetch
+  useEffect(() => {
+    if (isAuthenticated && !initialized.current) {
+      initialized.current = true;
+      console.log("Initial cluster data fetch");
 
-    // Initialize first secret and configmap names
-    setSecretNames(["app-secret"]);
-    setConfigmapNames(["app-config"]);
+      // Initialize with valid names that don't contain dashes to avoid validation issues
+      setSecretNames(["appsecret"]);
+      setConfigmapNames(["appconfig"]);
 
-    // Check admin access first
-    apiClient.checkAdminAccess()
-      .then(response => {
-        setAdminAccessChecked(true);
-        if (response.data?.status === "success") {
-          console.log("Admin access verified");
-          fetchClusterData();
-        } else {
-          console.error("Admin access denied:", response.data?.message);
-          setError("Admin access denied: " + (response.data?.message || "Insufficient permissions"));
+      // Check admin access first
+      apiClient.checkAdminAccess()
+        .then(response => {
+          setAdminAccessChecked(true);
+          if (response.data?.status === "success") {
+            console.log("Admin access verified");
+            fetchClusterData();
+          } else {
+            console.error("Admin access denied:", response.data?.message);
+            setError("Admin access denied: " + (response.data?.message || "Insufficient permissions"));
+            setLoading(false);
+          }
+        })
+        .catch(err => {
+          console.error("Error checking admin access:", err);
+          setAdminAccessChecked(true);
+          setError("Error checking admin permissions: " + err.message);
           setLoading(false);
-        }
-      })
-      .catch(err => {
-        console.error("Error checking admin access:", err);
-        setAdminAccessChecked(true);
-        setError("Error checking admin permissions: " + err.message);
-        setLoading(false);
+        });
+    }
+  }, [isAuthenticated, fetchClusterData, apiClient]);
+
+  // Function to validate a storage volume name
+  const validateStorageName = (isValid, name, index) => {
+    const updatedStorage = [...storageDetails];
+
+    if (!isValid) {
+      updatedStorage[index].nameError = "Invalid volume name. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.";
+      setValidationErrors(prev => ({
+        ...prev,
+        [`storage-${index}`]: `Volume: Invalid name format`
+      }));
+    } else {
+      updatedStorage[index].nameError = "";
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`storage-${index}`];
+        return newErrors;
       });
-  }
-}, [isAuthenticated, fetchClusterData, apiClient]);
+    }
+
+    setStorageDetails(updatedStorage);
+  };
 
   // Function to add a new storage volume
   const addStorage = () => {
@@ -157,13 +274,26 @@ useEffect(() => {
       name: "",
       mountPath: "",
       size: "",
-      storageClass: defaultStorageClass
+      storageClass: defaultStorageClass,
+      nameError: ""
     }]);
   };
 
   // Function to remove a storage volume
   const removeStorage = (index) => {
-    setStorageDetails(storageDetails.filter((_, i) => i !== index));
+    const updatedStorage = [...storageDetails];
+    const removed = updatedStorage.splice(index, 1)[0];
+
+    // Remove from validation errors if present
+    if (removed.nameError) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`storage-${index}`];
+        return newErrors;
+      });
+    }
+
+    setStorageDetails(updatedStorage);
   };
 
   const handleStorageChange = (index, field, value) => {
@@ -172,8 +302,27 @@ useEffect(() => {
     setStorageDetails(updatedStorage);
   };
 
-  // State to keep track of available secret names
-  const [secretNames, setSecretNames] = useState([]);
+  // Function to validate a secret name
+  const validateSecretName = (isValid, name, secretIndex) => {
+    const updatedSecrets = [...secretsDetails];
+
+    if (!isValid) {
+      updatedSecrets[secretIndex].nameError = "Invalid secret name. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.";
+      setValidationErrors(prev => ({
+        ...prev,
+        [`secret-${secretIndex}`]: `Secret: Invalid name format`
+      }));
+    } else {
+      updatedSecrets[secretIndex].nameError = "";
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`secret-${secretIndex}`];
+        return newErrors;
+      });
+    }
+
+    setSecretsDetails(updatedSecrets);
+  };
 
   // Function to add a new secret
   const addSecret = () => {
@@ -181,13 +330,14 @@ useEffect(() => {
       name: secretNames.length > 0 ? secretNames[0] : "",
       key: "",
       value: "",
-      mountType: "env"
+      mountType: "env",
+      nameError: ""
     }]);
   };
 
   // Function to add a new secret name
   const addSecretName = () => {
-    const newSecretName = `secret-${secretNames.length + 1}`;
+    const newSecretName = `secret${secretNames.length + 1}`; // No dash
     setSecretNames([...secretNames, newSecretName]);
 
     // Create a new secret entry with this name
@@ -195,7 +345,8 @@ useEffect(() => {
       name: newSecretName,
       key: "",
       value: "",
-      mountType: "env"
+      mountType: "env",
+      nameError: ""
     }]);
 
     return newSecretName;
@@ -205,6 +356,7 @@ useEffect(() => {
   const renameSecret = (oldName, newName) => {
     if (newName.trim() === "") return;
 
+    // Update without validating - will validate on blur instead
     // Update the name in the secretNames array
     const updatedNames = secretNames.map(name =>
       name === oldName ? newName : name
@@ -212,15 +364,58 @@ useEffect(() => {
     setSecretNames(updatedNames);
 
     // Update all secret details that use this name
-    const updatedSecrets = secretsDetails.map(secret =>
-      secret.name === oldName ? { ...secret, name: newName } : secret
-    );
+    const updatedSecrets = secretsDetails.map(secret => {
+      if (secret.name === oldName) {
+        return { ...secret, name: newName };
+      }
+      return secret;
+    });
+
     setSecretsDetails(updatedSecrets);
+  };
+
+  // Function to validate secret name on blur
+  const validateSecretRename = (oldName, newName) => {
+    if (!validateResourceName(newName)) {
+      // Find and update all secrets with this name to show the error
+      const updatedSecrets = secretsDetails.map(secret => {
+        if (secret.name === oldName) {
+          return {
+            ...secret,
+            nameError: "Invalid secret name. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+          };
+        }
+        return secret;
+      });
+
+      // Update validation errors
+      setValidationErrors(prev => ({
+        ...prev,
+        [`secret-${oldName}`]: `Secret '${oldName}': Invalid name format`
+      }));
+
+      setSecretsDetails(updatedSecrets);
+      return false;
+    }
+
+    return true;
   };
 
   // Function to remove a secret
   const removeSecret = (index) => {
-    setSecretsDetails(secretsDetails.filter((_, i) => i !== index));
+    const updatedSecrets = [...secretsDetails];
+    const removed = updatedSecrets.splice(index, 1)[0];
+
+    // Remove from validation errors if present
+    if (removed.nameError) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`secret-${index}`];
+        return newErrors;
+      });
+    }
+
+    setSecretsDetails(updatedSecrets);
   };
 
   const handleSecretChange = (index, field, value) => {
@@ -235,8 +430,27 @@ useEffect(() => {
     setSecretsDetails(updatedSecrets);
   };
 
-  // State to keep track of available configmap names
-  const [configmapNames, setConfigmapNames] = useState([]);
+  // Function to validate a configmap name
+  const validateConfigmapName = (isValid, name, configmapIndex) => {
+    const updatedConfigmaps = [...configmapsDetails];
+
+    if (!isValid) {
+      updatedConfigmaps[configmapIndex].nameError = "Invalid ConfigMap name. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.";
+      setValidationErrors(prev => ({
+        ...prev,
+        [`configmap-${configmapIndex}`]: `ConfigMap: Invalid name format`
+      }));
+    } else {
+      updatedConfigmaps[configmapIndex].nameError = "";
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`configmap-${configmapIndex}`];
+        return newErrors;
+      });
+    }
+
+    setConfigmapsDetails(updatedConfigmaps);
+  };
 
   // Function to add a new configmap
   const addConfigmap = () => {
@@ -244,13 +458,14 @@ useEffect(() => {
       name: configmapNames.length > 0 ? configmapNames[0] : "",
       key: "",
       value: "",
-      mountType: "env"
+      mountType: "env",
+      nameError: ""
     }]);
   };
 
   // Function to add a new configmap name
   const addConfigmapName = () => {
-    const newConfigmapName = `config-${configmapNames.length + 1}`;
+    const newConfigmapName = `config${configmapNames.length + 1}`; // No dash
     setConfigmapNames([...configmapNames, newConfigmapName]);
 
     // Create a new configmap entry with this name
@@ -258,7 +473,8 @@ useEffect(() => {
       name: newConfigmapName,
       key: "",
       value: "",
-      mountType: "env"
+      mountType: "env",
+      nameError: ""
     }]);
 
     return newConfigmapName;
@@ -268,6 +484,7 @@ useEffect(() => {
   const renameConfigmap = (oldName, newName) => {
     if (newName.trim() === "") return;
 
+    // Update without validating - will validate on blur instead
     // Update the name in the configmapNames array
     const updatedNames = configmapNames.map(name =>
       name === oldName ? newName : name
@@ -275,15 +492,58 @@ useEffect(() => {
     setConfigmapNames(updatedNames);
 
     // Update all configmap details that use this name
-    const updatedConfigmaps = configmapsDetails.map(configmap =>
-      configmap.name === oldName ? { ...configmap, name: newName } : configmap
-    );
+    const updatedConfigmaps = configmapsDetails.map(configmap => {
+      if (configmap.name === oldName) {
+        return { ...configmap, name: newName };
+      }
+      return configmap;
+    });
+
     setConfigmapsDetails(updatedConfigmaps);
+  };
+
+  // Function to validate configmap name on blur
+  const validateConfigmapRename = (oldName, newName) => {
+    if (!validateResourceName(newName)) {
+      // Find and update all configmaps with this name to show the error
+      const updatedConfigmaps = configmapsDetails.map(configmap => {
+        if (configmap.name === oldName) {
+          return {
+            ...configmap,
+            nameError: "Invalid ConfigMap name. Must be lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+          };
+        }
+        return configmap;
+      });
+
+      // Update validation errors
+      setValidationErrors(prev => ({
+        ...prev,
+        [`configmap-${oldName}`]: `ConfigMap '${oldName}': Invalid name format`
+      }));
+
+      setConfigmapsDetails(updatedConfigmaps);
+      return false;
+    }
+
+    return true;
   };
 
   // Function to remove a configmap
   const removeConfigmap = (index) => {
-    setConfigmapsDetails(configmapsDetails.filter((_, i) => i !== index));
+    const updatedConfigmaps = [...configmapsDetails];
+    const removed = updatedConfigmaps.splice(index, 1)[0];
+
+    // Remove from validation errors if present
+    if (removed.nameError) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`configmap-${index}`];
+        return newErrors;
+      });
+    }
+
+    setConfigmapsDetails(updatedConfigmaps);
   };
 
   const handleConfigmapChange = (index, field, value) => {
@@ -299,8 +559,7 @@ useEffect(() => {
   };
 
   // Function to handle namespace selection or creation
-  const handleNamespaceChange = (e) => {
-    const value = e.target.value;
+  const handleNamespaceChange = (value) => {
     if (value === "create-new") {
       setCreateNewNamespace(true);
       setNamespace("");
@@ -317,8 +576,73 @@ useEffect(() => {
     }).catch(err => console.error("Failed to copy YAML:", err));
   };
 
+  // Perform form validation
+  const validateForm = () => {
+    let formErrors = {};
+
+    // Validate namespace
+    if (createNewNamespace && namespace) {
+      if (!validateResourceName(namespace)) {
+        formErrors.namespace = "Invalid namespace name";
+      }
+    }
+
+    // Validate route hostname if route is exposed
+    if (exposeRoute && routeHostname) {
+      if (!validateResourceName(routeHostname)) {
+        formErrors.routeHostname = "Invalid route hostname";
+      }
+    }
+
+    // Validate storage names
+    if (storageRequired) {
+      storageDetails.forEach((volume, index) => {
+        if (volume.name && !validateResourceName(volume.name)) {
+          formErrors[`storage-${index}`] = `Volume '${volume.name}': Invalid name format`;
+        }
+      });
+    }
+
+    // Validate secret names
+    if (secretsRequired) {
+      secretsDetails.forEach((secret, index) => {
+        if (secret.name && !validateResourceName(secret.name)) {
+          formErrors[`secret-${index}`] = `Secret '${secret.name}': Invalid name format`;
+        }
+      });
+    }
+
+    // Validate configmap names
+    if (configmapsRequired) {
+      configmapsDetails.forEach((configmap, index) => {
+        if (configmap.name && !validateResourceName(configmap.name)) {
+          formErrors[`configmap-${index}`] = `ConfigMap '${configmap.name}': Invalid name format`;
+        }
+      });
+    }
+
+    setValidationErrors(formErrors);
+    return Object.keys(formErrors).length === 0;
+  };
+
+  // Check if form has validation errors
+  const hasValidationErrors = () => {
+    return Object.keys(validationErrors).length > 0;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setShowValidationErrors(true);
+
+    // Validate the form
+    const isValid = validateForm();
+
+    // Don't submit if there are validation errors
+    if (!isValid) {
+      alert("Please fix the validation errors before generating YAML.");
+      return;
+    }
+
     const deploymentData = {
       namespace,
       containerImage,
@@ -356,6 +680,17 @@ useEffect(() => {
   };
 
   const deployToOKD = async () => {
+    setShowValidationErrors(true);
+
+    // Validate the form
+    const isValid = validateForm();
+
+    // Don't submit if there are validation errors
+    if (!isValid) {
+      alert("Please fix the validation errors before deploying.");
+      return;
+    }
+
     const deploymentData = {
       namespace,
       containerImage,
@@ -424,6 +759,9 @@ useEffect(() => {
         </button>
       </div>
 
+      {/* Display validation errors at the top if any */}
+      {showValidationErrors && hasValidationErrors() && <ValidationSummary errors={validationErrors} />}
+
       <form onSubmit={handleSubmit}>
         {/* General Info Section */}
         <div className="form-section">
@@ -434,64 +772,66 @@ useEffect(() => {
             <div className="form-group">
               <label>Namespace:</label>
               {createNewNamespace ? (
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input
-                    type="text"
-                    value={namespace}
-                    onChange={(e) => setNamespace(e.target.value)}
-                    placeholder="Enter new namespace name"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setCreateNewNamespace(false)}
-                    className="btn btn-secondary"
-                  >
-                    Cancel
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '10px', position: 'relative' }}>
+                    <ValidatedNameInput
+                      value={namespace}
+                      onChange={setNamespace}
+                      onValidate={validateNamespace}
+                      placeholder="Enter new namespace name"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCreateNewNamespace(false)}
+                      className="btn btn-secondary"
+                      style={{ alignSelf: 'flex-start' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <select
-                  value={namespace}
-                  onChange={handleNamespaceChange}
-                  required
-                >
-                  <option value="">Select a namespace</option>
-                  {namespaces.map((ns) => (
-                    <option key={ns.name} value={ns.name}>{ns.name}</option>
-                  ))}
-                  <option value="create-new">--- Create New Namespace ---</option>
-                </select>
+                <div className="form-group">
+                  <select
+                    value={namespace}
+                    onChange={(e) => handleNamespaceChange(e.target.value)}
+                    required
+                  >
+                    <option value="">Select a namespace</option>
+                    {namespaces.map((ns) => (
+                      <option key={ns.name} value={ns.name}>{ns.name}</option>
+                    ))}
+                    <option value="create-new">--- Create New Namespace ---</option>
+                  </select>
+                </div>
               )}
             </div>
 
-            <div className="form-group">
-              <label>Container Image:</label>
-              <input
-                type="text"
-                value={containerImage}
-                onChange={(e) => setContainerImage(e.target.value)}
-                placeholder="e.g., nginx:latest"
-                required
-              />
-            </div>
+            <FormField
+              label="Container Image"
+              value={containerImage}
+              onChange={setContainerImage}
+              placeholder="e.g., nginx:latest"
+              required
+            />
           </div>
 
           {/* Row 2: CPU and Memory Requests */}
           <div className="form-row">
-            <div className="form-group">
-              <label>CPU Request:</label>
-              <select value={cpuRequest} onChange={(e) => setCpuRequest(e.target.value)}>
-                {cpuOptions.map((cpu) => <option key={cpu} value={cpu}>{cpu}</option>)}
-              </select>
-            </div>
+            <SelectField
+              label="CPU Request"
+              value={cpuRequest}
+              onChange={setCpuRequest}
+              options={cpuOptions}
+            />
 
-            <div className="form-group">
-              <label>Memory Request:</label>
-              <select value={memoryRequest} onChange={(e) => setMemoryRequest(e.target.value)}>
-                {memoryOptions.map((mem) => <option key={mem} value={mem}>{mem}</option>)}
-              </select>
-            </div>
+            <SelectField
+              label="Memory Request"
+              value={memoryRequest}
+              onChange={setMemoryRequest}
+              options={memoryOptions}
+            />
           </div>
         </div>
 
@@ -515,54 +855,38 @@ useEffect(() => {
                 <div key={index} className="nested-form-item">
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Volume Name:</label>
-                      <input
-                        type="text"
+                      <ValidatedNameInput
+                        label="Volume Name"
                         value={vol.name}
-                        onChange={(e) => handleStorageChange(index, "name", e.target.value)}
+                        onChange={(value) => handleStorageChange(index, "name", value)}
+                        onValidate={(isValid, name) => validateStorageName(isValid, name, index)}
                         placeholder="Name for the volume"
                       />
                     </div>
 
-                    <div className="form-group">
-                      <label>Mount Path:</label>
-                      <input
-                        type="text"
-                        value={vol.mountPath}
-                        onChange={(e) => handleStorageChange(index, "mountPath", e.target.value)}
-                        placeholder="e.g., /data"
-                      />
-                    </div>
+                    <FormField
+                      label="Mount Path"
+                      value={vol.mountPath}
+                      onChange={(value) => handleStorageChange(index, "mountPath", value)}
+                      placeholder="e.g., /data"
+                    />
                   </div>
 
                   <div className="form-row">
-                    <div className="form-group">
-                      <label>Size (Gi):</label>
-                      <input
-                        type="number"
-                        value={vol.size}
-                        onChange={(e) => handleStorageChange(index, "size", e.target.value)}
-                        placeholder="e.g., 10"
-                      />
-                    </div>
+                    <FormField
+                      label="Size (Gi)"
+                      type="number"
+                      value={vol.size}
+                      onChange={(value) => handleStorageChange(index, "size", value)}
+                      placeholder="e.g., 10"
+                    />
 
-                    <div className="form-group">
-                      <label>Storage Class:</label>
-                      <select
-                        value={vol.storageClass}
-                        onChange={(e) => handleStorageChange(index, "storageClass", e.target.value)}
-                      >
-                        {storageClasses.length > 0 ? (
-                          storageClasses.map((sc) => (
-                            <option key={sc.name} value={sc.name}>
-                              {sc.name} {sc.isDefault ? "(Default)" : ""}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="">No storage classes available</option>
-                        )}
-                      </select>
-                    </div>
+                    <SelectField
+                      label="Storage Class"
+                      value={vol.storageClass}
+                      onChange={(value) => handleStorageChange(index, "storageClass", value)}
+                      options={storageClassOptions}
+                    />
                   </div>
 
                   <button
@@ -612,21 +936,31 @@ useEffect(() => {
 
                     return configmapsWithName.length > 0 ? (
                       <div key={nameIndex} className="nested-form-item" style={{ background: '#f5fff0', marginBottom: '1.5rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
-                          <h4 style={{ margin: '0' }}>ConfigMap:</h4>
-                          <input
-                            type="text"
-                            value={configmapName}
-                            onChange={(e) => renameConfigmap(configmapName, e.target.value)}
-                            style={{
-                              fontWeight: 'bold',
-                              fontSize: '1rem',
-                              padding: '0.25rem 0.5rem',
-                              border: '1px dashed #aaa',
-                              borderRadius: '4px',
-                              background: 'transparent'
-                            }}
-                          />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
+                            <h4 style={{ margin: '0' }}>ConfigMap:</h4>
+                            <div style={{ position: 'relative', flex: '1' }}>
+                              <input
+                                type="text"
+                                value={configmapName}
+                                onChange={(e) => renameConfigmap(configmapName, e.target.value)}
+                                onBlur={(e) => validateConfigmapRename(configmapName, e.target.value)}
+                                style={{
+                                  fontWeight: 'bold',
+                                  fontSize: '1rem',
+                                  padding: '0.25rem 0.5rem',
+                                  border: '1px dashed #aaa',
+                                  borderRadius: '4px',
+                                  background: 'transparent',
+                                  width: '100%'
+                                }}
+                                className={configmapsWithName[0]?.nameError ? "input-error" : ""}
+                              />
+                              <ResourceNameTip />
+                            </div>
+                          </div>
+                          {configmapsWithName[0]?.nameError &&
+                            <div className="error-message">{configmapsWithName[0].nameError}</div>}
                         </div>
 
                         {configmapsWithName.map((configmap, detailIndex) => {
@@ -640,61 +974,50 @@ useEffect(() => {
                                  className="nested-form-item"
                                  style={{ marginBottom: '0.75rem' }}>
                               <div className="form-row">
-                                <div className="form-group">
-                                  <label>Key:</label>
-                                  <input
-                                    type="text"
-                                    value={configmap.key}
-                                    onChange={(e) => handleConfigmapChange(originalIndex, "key", e.target.value)}
-                                    placeholder="ConfigMap key name"
-                                  />
-                                </div>
+                                <FormField
+                                  label="Key"
+                                  value={configmap.key}
+                                  onChange={(value) => handleConfigmapChange(originalIndex, "key", value)}
+                                  placeholder="ConfigMap key name"
+                                />
 
-                                <div className="form-group">
-                                  <label>Value:</label>
-                                  <input
-                                    type="text"
-                                    value={configmap.value}
-                                    onChange={(e) => handleConfigmapChange(originalIndex, "value", e.target.value)}
-                                    placeholder="ConfigMap value"
-                                  />
-                                </div>
+                                <TextareaField
+                                  label="Value"
+                                  value={configmap.value}
+                                  onChange={(value) => handleConfigmapChange(originalIndex, "value", value)}
+                                  placeholder="ConfigMap value (use multiple lines for multi-line content)"
+                                  rows={4}
+                                  style={{ fontFamily: 'monospace' }}
+                                />
                               </div>
 
                               <div className="form-row">
-                                <div className="form-group">
-                                  <label>Mount Type:</label>
-                                  <select
-                                    value={configmap.mountType}
-                                    onChange={(e) => handleConfigmapChange(originalIndex, "mountType", e.target.value)}
-                                  >
-                                    <option value="env">Environment Variable</option>
-                                    <option value="volume">Volume Mount</option>
-                                  </select>
-                                </div>
+                                <SelectField
+                                  label="Mount Type"
+                                  value={configmap.mountType}
+                                  onChange={(value) => handleConfigmapChange(originalIndex, "mountType", value)}
+                                  options={[
+                                    { value: "env", label: "Environment Variable" },
+                                    { value: "volume", label: "Volume Mount" }
+                                  ]}
+                                />
 
                                 {configmap.mountType === "env" && (
-                                  <div className="form-group">
-                                    <label>Env Variable Name:</label>
-                                    <input
-                                      type="text"
-                                      value={configmap.envName || ""}
-                                      onChange={(e) => handleConfigmapChange(originalIndex, "envName", e.target.value)}
-                                      placeholder="Leave empty to use key name"
-                                    />
-                                  </div>
+                                  <FormField
+                                    label="Env Variable Name"
+                                    value={configmap.envName || ""}
+                                    onChange={(value) => handleConfigmapChange(originalIndex, "envName", value)}
+                                    placeholder="Leave empty to use key name"
+                                  />
                                 )}
 
                                 {configmap.mountType === "volume" && (
-                                  <div className="form-group">
-                                    <label>Mount Path:</label>
-                                    <input
-                                      type="text"
-                                      value={configmap.mountPath || ""}
-                                      onChange={(e) => handleConfigmapChange(originalIndex, "mountPath", e.target.value)}
-                                      placeholder="Path to mount the configmap at"
-                                    />
-                                  </div>
+                                  <FormField
+                                    label="Mount Path"
+                                    value={configmap.mountPath || ""}
+                                    onChange={(value) => handleConfigmapChange(originalIndex, "mountPath", value)}
+                                    placeholder="Path to mount the configmap at"
+                                  />
                                 )}
                               </div>
 
@@ -739,11 +1062,12 @@ useEffect(() => {
                   <div key={`unnamed-${index}`} className="nested-form-item">
                     <div className="form-row">
                       <div className="form-group">
-                        <label>ConfigMap Name:</label>
+                        <label>ConfigMap Name: <ResourceNameTip /></label>
                         <select
                           value={configmap.name || ""}
                           onChange={(e) => handleConfigmapChange(originalIndex, "name", e.target.value)}
                           required
+                          className={configmap.nameError ? "input-error" : ""}
                         >
                           <option value="">Select a configmap</option>
                           {configmapNames.map((name) => (
@@ -751,67 +1075,57 @@ useEffect(() => {
                           ))}
                           <option value="add-new-configmap">+ Add New ConfigMap</option>
                         </select>
+                        {configmap.nameError && <div className="error-message">{configmap.nameError}</div>}
                       </div>
 
-                      <div className="form-group">
-                        <label>Key:</label>
-                        <input
-                          type="text"
-                          value={configmap.key}
-                          onChange={(e) => handleConfigmapChange(originalIndex, "key", e.target.value)}
-                          placeholder="ConfigMap key name"
-                        />
-                      </div>
+                      <FormField
+                        label="Key"
+                        value={configmap.key}
+                        onChange={(value) => handleConfigmapChange(originalIndex, "key", value)}
+                        placeholder="ConfigMap key name"
+                      />
                     </div>
 
                     <div className="form-row">
-                      <div className="form-group">
-                        <label>Value:</label>
-                        <input
-                          type="text"
-                          value={configmap.value}
-                          onChange={(e) => handleConfigmapChange(originalIndex, "value", e.target.value)}
-                          placeholder="ConfigMap value"
-                        />
-                      </div>
+                      <TextareaField
+                        label="Value"
+                        value={configmap.value}
+                        onChange={(value) => handleConfigmapChange(originalIndex, "value", value)}
+                        placeholder="ConfigMap value (use multiple lines for multi-line content)"
+                        rows={4}
+                        style={{ fontFamily: 'monospace' }}
+                      />
 
-                      <div className="form-group">
-                        <label>Mount Type:</label>
-                        <select
-                          value={configmap.mountType}
-                          onChange={(e) => handleConfigmapChange(originalIndex, "mountType", e.target.value)}
-                        >
-                          <option value="env">Environment Variable</option>
-                          <option value="volume">Volume Mount</option>
-                        </select>
-                      </div>
+                      <SelectField
+                        label="Mount Type"
+                        value={configmap.mountType}
+                        onChange={(value) => handleConfigmapChange(originalIndex, "mountType", value)}
+                        options={[
+                          { value: "env", label: "Environment Variable" },
+                          { value: "volume", label: "Volume Mount" }
+                        ]}
+                      />
                     </div>
 
                     {configmap.mountType === "env" && (
                       <div className="form-row">
-                        <div className="form-group">
-                          <label>Env Variable Name:</label>
-                          <input
-                            type="text"
-                            value={configmap.envName || ""}
-                            onChange={(e) => handleConfigmapChange(originalIndex, "envName", e.target.value)}
-                            placeholder="Leave empty to use key name"
-                          />
-                        </div>
+                        <FormField
+                          label="Env Variable Name"
+                          value={configmap.envName || ""}
+                          onChange={(value) => handleConfigmapChange(originalIndex, "envName", value)}
+                          placeholder="Leave empty to use key name"
+                        />
                       </div>
                     )}
 
                     {configmap.mountType === "volume" && (
                       <div className="form-row">
-                        <div className="form-group">
-                          <label>Mount Path:</label>
-                          <input
-                            type="text"
-                            value={configmap.mountPath || ""}
-                            onChange={(e) => handleConfigmapChange(originalIndex, "mountPath", e.target.value)}
-                            placeholder="Path to mount the configmap at"
-                          />
-                        </div>
+                        <FormField
+                          label="Mount Path"
+                          value={configmap.mountPath || ""}
+                          onChange={(value) => handleConfigmapChange(originalIndex, "mountPath", value)}
+                          placeholder="Path to mount the configmap at"
+                        />
                       </div>
                     )}
 
@@ -887,21 +1201,31 @@ useEffect(() => {
 
                     return secretsWithName.length > 0 ? (
                       <div key={nameIndex} className="nested-form-item" style={{ background: '#f0f5ff', marginBottom: '1.5rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
-                          <h4 style={{ margin: '0' }}>Secret:</h4>
-                          <input
-                            type="text"
-                            value={secretName}
-                            onChange={(e) => renameSecret(secretName, e.target.value)}
-                            style={{
-                              fontWeight: 'bold',
-                              fontSize: '1rem',
-                              padding: '0.25rem 0.5rem',
-                              border: '1px dashed #aaa',
-                              borderRadius: '4px',
-                              background: 'transparent'
-                            }}
-                          />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
+                            <h4 style={{ margin: '0' }}>Secret:</h4>
+                            <div style={{ position: 'relative', flex: '1' }}>
+                              <input
+                                type="text"
+                                value={secretName}
+                                onChange={(e) => renameSecret(secretName, e.target.value)}
+                                onBlur={(e) => validateSecretRename(secretName, e.target.value)}
+                                style={{
+                                  fontWeight: 'bold',
+                                  fontSize: '1rem',
+                                  padding: '0.25rem 0.5rem',
+                                  border: '1px dashed #aaa',
+                                  borderRadius: '4px',
+                                  background: 'transparent',
+                                  width: '100%'
+                                }}
+                                className={secretsWithName[0]?.nameError ? "input-error" : ""}
+                              />
+                              <ResourceNameTip />
+                            </div>
+                          </div>
+                          {secretsWithName[0]?.nameError &&
+                            <div className="error-message">{secretsWithName[0].nameError}</div>}
                         </div>
 
                         {secretsWithName.map((secret, detailIndex) => {
@@ -915,61 +1239,48 @@ useEffect(() => {
                                  className="nested-form-item"
                                  style={{ marginBottom: '0.75rem' }}>
                               <div className="form-row">
-                                <div className="form-group">
-                                  <label>Key:</label>
-                                  <input
-                                    type="text"
-                                    value={secret.key}
-                                    onChange={(e) => handleSecretChange(originalIndex, "key", e.target.value)}
-                                    placeholder="Secret key name"
-                                  />
-                                </div>
+                                <FormField
+                                  label="Key"
+                                  value={secret.key}
+                                  onChange={(value) => handleSecretChange(originalIndex, "key", value)}
+                                  placeholder="Secret key name"
+                                />
 
-                                <div className="form-group">
-                                  <label>Value:</label>
-                                  <input
-                                    type="text"
-                                    value={secret.value}
-                                    onChange={(e) => handleSecretChange(originalIndex, "value", e.target.value)}
-                                    placeholder="Secret value"
-                                  />
-                                </div>
+                                <FormField
+                                  label="Value"
+                                  value={secret.value}
+                                  onChange={(value) => handleSecretChange(originalIndex, "value", value)}
+                                  placeholder="Secret value"
+                                />
                               </div>
 
                               <div className="form-row">
-                                <div className="form-group">
-                                  <label>Mount Type:</label>
-                                  <select
-                                    value={secret.mountType}
-                                    onChange={(e) => handleSecretChange(originalIndex, "mountType", e.target.value)}
-                                  >
-                                    <option value="env">Environment Variable</option>
-                                    <option value="volume">Volume Mount</option>
-                                  </select>
-                                </div>
+                                <SelectField
+                                  label="Mount Type"
+                                  value={secret.mountType}
+                                  onChange={(value) => handleSecretChange(originalIndex, "mountType", value)}
+                                  options={[
+                                    { value: "env", label: "Environment Variable" },
+                                    { value: "volume", label: "Volume Mount" }
+                                  ]}
+                                />
 
                                 {secret.mountType === "env" && (
-                                  <div className="form-group">
-                                    <label>Env Variable Name:</label>
-                                    <input
-                                      type="text"
-                                      value={secret.envName || ""}
-                                      onChange={(e) => handleSecretChange(originalIndex, "envName", e.target.value)}
-                                      placeholder="Leave empty to use key name"
-                                    />
-                                  </div>
+                                  <FormField
+                                    label="Env Variable Name"
+                                    value={secret.envName || ""}
+                                    onChange={(value) => handleSecretChange(originalIndex, "envName", value)}
+                                    placeholder="Leave empty to use key name"
+                                  />
                                 )}
 
                                 {secret.mountType === "volume" && (
-                                  <div className="form-group">
-                                    <label>Mount Path:</label>
-                                    <input
-                                      type="text"
-                                      value={secret.mountPath || ""}
-                                      onChange={(e) => handleSecretChange(originalIndex, "mountPath", e.target.value)}
-                                      placeholder="Path to mount the secret at"
-                                    />
-                                  </div>
+                                  <FormField
+                                    label="Mount Path"
+                                    value={secret.mountPath || ""}
+                                    onChange={(value) => handleSecretChange(originalIndex, "mountPath", value)}
+                                    placeholder="Path to mount the secret at"
+                                  />
                                 )}
                               </div>
 
@@ -1014,11 +1325,12 @@ useEffect(() => {
                   <div key={`unnamed-${index}`} className="nested-form-item">
                     <div className="form-row">
                       <div className="form-group">
-                        <label>Secret Name:</label>
+                        <label>Secret Name: <ResourceNameTip /></label>
                         <select
                           value={secret.name || ""}
                           onChange={(e) => handleSecretChange(originalIndex, "name", e.target.value)}
                           required
+                          className={secret.nameError ? "input-error" : ""}
                         >
                           <option value="">Select a secret</option>
                           {secretNames.map((name) => (
@@ -1026,67 +1338,55 @@ useEffect(() => {
                           ))}
                           <option value="add-new-secret">+ Add New Secret</option>
                         </select>
+                        {secret.nameError && <div className="error-message">{secret.nameError}</div>}
                       </div>
 
-                      <div className="form-group">
-                        <label>Key:</label>
-                        <input
-                          type="text"
-                          value={secret.key}
-                          onChange={(e) => handleSecretChange(originalIndex, "key", e.target.value)}
-                          placeholder="Secret key name"
-                        />
-                      </div>
+                      <FormField
+                        label="Key"
+                        value={secret.key}
+                        onChange={(value) => handleSecretChange(originalIndex, "key", value)}
+                        placeholder="Secret key name"
+                      />
                     </div>
 
                     <div className="form-row">
-                      <div className="form-group">
-                        <label>Value:</label>
-                        <input
-                          type="text"
-                          value={secret.value}
-                          onChange={(e) => handleSecretChange(originalIndex, "value", e.target.value)}
-                          placeholder="Secret value"
-                        />
-                      </div>
+                      <FormField
+                        label="Value"
+                        value={secret.value}
+                        onChange={(value) => handleSecretChange(originalIndex, "value", value)}
+                        placeholder="Secret value"
+                      />
 
-                      <div className="form-group">
-                        <label>Mount Type:</label>
-                        <select
-                          value={secret.mountType}
-                          onChange={(e) => handleSecretChange(originalIndex, "mountType", e.target.value)}
-                        >
-                          <option value="env">Environment Variable</option>
-                          <option value="volume">Volume Mount</option>
-                        </select>
-                      </div>
+                      <SelectField
+                        label="Mount Type"
+                        value={secret.mountType}
+                        onChange={(value) => handleSecretChange(originalIndex, "mountType", value)}
+                        options={[
+                          { value: "env", label: "Environment Variable" },
+                          { value: "volume", label: "Volume Mount" }
+                        ]}
+                      />
                     </div>
 
                     {secret.mountType === "env" && (
                       <div className="form-row">
-                        <div className="form-group">
-                          <label>Env Variable Name:</label>
-                          <input
-                            type="text"
-                            value={secret.envName || ""}
-                            onChange={(e) => handleSecretChange(originalIndex, "envName", e.target.value)}
-                            placeholder="Leave empty to use key name"
-                          />
-                        </div>
+                        <FormField
+                          label="Env Variable Name"
+                          value={secret.envName || ""}
+                          onChange={(value) => handleSecretChange(originalIndex, "envName", value)}
+                          placeholder="Leave empty to use key name"
+                        />
                       </div>
                     )}
 
                     {secret.mountType === "volume" && (
                       <div className="form-row">
-                        <div className="form-group">
-                          <label>Mount Path:</label>
-                          <input
-                            type="text"
-                            value={secret.mountPath || ""}
-                            onChange={(e) => handleSecretChange(originalIndex, "mountPath", e.target.value)}
-                            placeholder="Path to mount the secret at"
-                          />
-                        </div>
+                        <FormField
+                          label="Mount Path"
+                          value={secret.mountPath || ""}
+                          onChange={(value) => handleSecretChange(originalIndex, "mountPath", value)}
+                          placeholder="Path to mount the secret at"
+                        />
                       </div>
                     )}
 
@@ -1142,15 +1442,13 @@ useEffect(() => {
           <h3>Network Configuration</h3>
 
           <div className="form-row">
-            <div className="form-group">
-              <label>Container Port:</label>
-              <input
-                type="number"
-                value={containerPort}
-                onChange={(e) => setContainerPort(e.target.value)}
-                required
-              />
-            </div>
+            <FormField
+              label="Container Port"
+              type="number"
+              value={containerPort}
+              onChange={setContainerPort}
+              required
+            />
 
             <div className="form-group">
               <div className="checkbox-group">
@@ -1167,29 +1465,37 @@ useEffect(() => {
 
           {exposeRoute && (
             <div className="form-row">
-              <div className="form-group">
-                <label>Route Port:</label>
-                <select value={routePort} onChange={(e) => setRoutePort(e.target.value)}>
-                  <option value="80">Port 80</option>
-                  <option value="443">Port 443 (SSL)</option>
-                </select>
-              </div>
+              <SelectField
+                label="Route Port"
+                value={routePort}
+                onChange={setRoutePort}
+                options={[
+                  { value: "80", label: "Port 80" },
+                  { value: "443", label: "Port 443 (SSL)" }
+                ]}
+              />
 
               <div className="form-group">
                 <label>Hostname:</label>
-                <input
-                  type="text"
-                  value={routeHostname}
-                  onChange={(e) => setRouteHostname(e.target.value)}
-                  placeholder="Enter subdomain"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Domain:</label>
-                <select value={routeDomain} onChange={(e) => setRouteDomain(e.target.value)}>
-                  {routeDomains.map((domain) => <option key={domain} value={domain}>{domain}</option>)}
-                </select>
+                <div style={{ display: 'flex', gap: '5px', position: 'relative' }}>
+                  <ValidatedNameInput
+                    value={routeHostname}
+                    onChange={setRouteHostname}
+                    onValidate={validateRouteHostname}
+                    placeholder="Enter subdomain"
+                    required
+                  />
+                  <span style={{ alignSelf: 'center' }}>.</span>
+                  <select
+                    value={routeDomain}
+                    onChange={(e) => setRouteDomain(e.target.value)}
+                    style={{ flex: '1' }}
+                  >
+                    {getDomainOptions().map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           )}

@@ -1,12 +1,37 @@
 import yaml
 import base64
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+# RFC 1123 subdomain regex pattern for validation
+RFC1123_PATTERN = r'^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$'
+
+def validate_resource_name(name):
+    """Validate if a resource name conforms to RFC 1123 subdomain pattern."""
+    if not name:
+        return False
+
+    return bool(re.match(RFC1123_PATTERN, name))
+
+# Custom YAML representer to use the pipe character for multiline strings
+def represent_multiline_str(dumper, data):
+    if '\n' in data:
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+
+# Register our custom representer
+yaml.add_representer(str, represent_multiline_str)
 
 def generate_yaml(data):
     """Generate YAML manifests for OpenShift deployment."""
     namespace = data["namespace"]
+
+    # Validate namespace name
+    if not validate_resource_name(namespace):
+        raise ValueError(f"Invalid namespace name '{namespace}'. Must match RFC 1123 pattern: lowercase alphanumeric characters, '-' or '.', must start and end with alphanumeric.")
+
     container_image = data["containerImage"]
     cpu_request = data["cpuRequest"]
     memory_request = data["memoryRequest"]
@@ -15,6 +40,10 @@ def generate_yaml(data):
 
     route_port = int(data["routePort"]) if expose_route else None
     route_hostname = data["routeHostname"] if expose_route else None  # Full hostname
+
+    # Validate route hostname if provided
+    if route_hostname and not validate_resource_name(route_hostname):
+        raise ValueError(f"Invalid route hostname '{route_hostname}'. Must match RFC 1123 pattern.")
 
     storage_required = data["storageRequired"]
     storage_details = data["storageDetails"] if storage_required else []
@@ -44,10 +73,15 @@ def generate_yaml(data):
         }
 
     # Deployment YAML
+    deployment_name = f"{namespace}-deployment"
+    # Validate deployment name
+    if not validate_resource_name(deployment_name):
+        raise ValueError(f"Invalid deployment name '{deployment_name}'. Must match RFC 1123 pattern.")
+
     deployment_yaml = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
-        "metadata": {"name": f"{namespace}-deployment", "namespace": namespace},
+        "metadata": {"name": deployment_name, "namespace": namespace},
         "spec": {
             "replicas": 1,
             "selector": {"matchLabels": {"app": namespace}},
@@ -77,6 +111,11 @@ def generate_yaml(data):
     if storage_required:
         for storage in storage_details:
             volume_name = storage["name"]
+
+            # Validate volume name
+            if not validate_resource_name(volume_name):
+                raise ValueError(f"Invalid volume name '{volume_name}'. Must match RFC 1123 pattern.")
+
             mount_path = storage["mountPath"]
             volume_size = f"{storage['size']}Gi"
             storage_class = storage["storageClass"]
@@ -111,6 +150,11 @@ def generate_yaml(data):
         configmap_groups = {}
         for configmap_detail in configmaps_details:
             configmap_name = configmap_detail["name"]
+
+            # Validate configmap name
+            if not validate_resource_name(configmap_name):
+                raise ValueError(f"Invalid configmap name '{configmap_name}'. Must match RFC 1123 pattern.")
+
             if configmap_name not in configmap_groups:
                 configmap_groups[configmap_name] = []
             configmap_groups[configmap_name].append(configmap_detail)
@@ -120,7 +164,11 @@ def generate_yaml(data):
             # Create the configmap data
             configmap_data = {}
             for item in configmap_items:
-                configmap_data[item["key"]] = item["value"]
+                key = item["key"]
+                value = item["value"]
+
+                # The registered custom representer will handle multiline strings properly
+                configmap_data[key] = value
 
             # Create the configmap YAML
             configmap_yaml = {
@@ -176,6 +224,11 @@ def generate_yaml(data):
         secret_groups = {}
         for secret_detail in secrets_details:
             secret_name = secret_detail["name"]
+
+            # Validate secret name
+            if not validate_resource_name(secret_name):
+                raise ValueError(f"Invalid secret name '{secret_name}'. Must match RFC 1123 pattern.")
+
             if secret_name not in secret_groups:
                 secret_groups[secret_name] = []
             secret_groups[secret_name].append(secret_detail)
@@ -237,10 +290,16 @@ def generate_yaml(data):
                     })
 
     # Service YAML
+    service_name = f"{namespace}-service"
+
+    # Validate service name
+    if not validate_resource_name(service_name):
+        raise ValueError(f"Invalid service name '{service_name}'. Must match RFC 1123 pattern.")
+
     service_yaml = {
         "apiVersion": "v1",
         "kind": "Service",
-        "metadata": {"name": f"{namespace}-service", "namespace": namespace},
+        "metadata": {"name": service_name, "namespace": namespace},
         "spec": {
             "selector": {"app": namespace},
             "ports": [{"protocol": "TCP", "port": container_port, "targetPort": container_port}]
@@ -250,12 +309,18 @@ def generate_yaml(data):
     # Route YAML (if requested)
     route_yaml = None
     if expose_route and route_hostname:
+        route_name = f"{namespace}-route"
+
+        # Validate route name
+        if not validate_resource_name(route_name):
+            raise ValueError(f"Invalid route name '{route_name}'. Must match RFC 1123 pattern.")
+
         route_yaml = {
             "apiVersion": "route.openshift.io/v1",
             "kind": "Route",
-            "metadata": {"name": f"{namespace}-route", "namespace": namespace},
+            "metadata": {"name": route_name, "namespace": namespace},
             "spec": {
-                "to": {"kind": "Service", "name": f"{namespace}-service"},
+                "to": {"kind": "Service", "name": service_name},
                 "port": {"targetPort": container_port},  # Uses the correct service port
                 "host": route_hostname,  # Use full hostname from frontend
                 "tls": {"termination": "edge"} if route_port == 443 else None
