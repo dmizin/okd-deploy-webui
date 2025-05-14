@@ -131,6 +131,7 @@ def serve_frontend():
     return send_from_directory(app.static_folder, "index.html")
 
 
+# Update to the generate-yaml API endpoint in app.py
 @app.route("/generate-yaml", methods=["POST"])
 @requires_auth
 @requires_admin
@@ -141,7 +142,20 @@ def generate_yaml_api():
         if not data:
             return jsonify({"status": "error", "message": "Invalid input"}), 400
 
-        logger.info(f"Generating YAML for request")
+        logger.info(f"Generating YAML for request with namespace '{data.get('namespace')}'")
+
+        # Extract and validate critical fields
+        namespace = data.get("namespace")
+        if not namespace:
+            return jsonify({"status": "error", "message": "Namespace is required"}), 400
+
+        # Log if this is a new namespace creation with requester info
+        create_new = data.get("createNewNamespace", False)
+        requester = data.get("requesterNickname", "")
+        if create_new:
+            logger.info(f"Creating new namespace '{namespace}' with requester '{requester}'")
+        else:
+            logger.info(f"Using existing namespace '{namespace}'")
 
         yaml_output = generate_yaml(data)
         return jsonify({"status": "success", "yaml": yaml_output})
@@ -151,6 +165,7 @@ def generate_yaml_api():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# Update to the deploy-to-okd API endpoint in app.py
 @app.route("/deploy-to-okd", methods=["POST"])
 @requires_auth
 @requires_admin
@@ -158,7 +173,17 @@ def deploy_to_okd():
     """ API to deploy YAML to OpenShift """
     try:
         data = request.get_json()
-        logger.info(f"Received OpenShift deployment request")
+        logger.info(f"Received OpenShift deployment request for namespace '{data.get('namespace')}'")
+
+        # Log if this is a new namespace creation with requester info
+        namespace = data.get("namespace")
+        create_new = data.get("createNewNamespace", False)
+        requester = data.get("requesterNickname", "")
+
+        if create_new:
+            logger.info(f"Creating new namespace '{namespace}' with requester '{requester}'")
+        else:
+            logger.info(f"Using existing namespace '{namespace}'")
 
         # Generate YAML
         yaml_content = generate_yaml(data)

@@ -26,7 +26,7 @@ const fallbackStorageClasses = [
 
 const DeploymentForm = () => {
   const apiClient = useApiClient();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
 // Use a ref to track initialization state to prevent double fetching
   const initialized = useRef(false);
@@ -45,6 +45,8 @@ const DeploymentForm = () => {
   const [storageDetails, setStorageDetails] = useState([]);
   const [secretsRequired, setSecretsRequired] = useState(false);
   const [secretsDetails, setSecretsDetails] = useState([]);
+  const [configmapsRequired, setConfigmapsRequired] = useState(false);
+  const [configmapsDetails, setConfigmapsDetails] = useState([]);
   const [generatedYaml, setGeneratedYaml] = useState(""); // Store YAML response
 
   // State for cluster data
@@ -118,6 +120,10 @@ useEffect(() => {
     initialized.current = true;
     console.log("Initial cluster data fetch");
 
+    // Initialize first secret and configmap names
+    setSecretNames(["app-secret"]);
+    setConfigmapNames(["app-config"]);
+
     // Check admin access first
     apiClient.checkAdminAccess()
       .then(response => {
@@ -166,9 +172,50 @@ useEffect(() => {
     setStorageDetails(updatedStorage);
   };
 
+  // State to keep track of available secret names
+  const [secretNames, setSecretNames] = useState([]);
+
   // Function to add a new secret
   const addSecret = () => {
-    setSecretsDetails([...secretsDetails, { name: "", key: "", value: "", mountType: "env" }]);
+    setSecretsDetails([...secretsDetails, {
+      name: secretNames.length > 0 ? secretNames[0] : "",
+      key: "",
+      value: "",
+      mountType: "env"
+    }]);
+  };
+
+  // Function to add a new secret name
+  const addSecretName = () => {
+    const newSecretName = `secret-${secretNames.length + 1}`;
+    setSecretNames([...secretNames, newSecretName]);
+
+    // Create a new secret entry with this name
+    setSecretsDetails([...secretsDetails, {
+      name: newSecretName,
+      key: "",
+      value: "",
+      mountType: "env"
+    }]);
+
+    return newSecretName;
+  };
+
+  // Function to rename a secret
+  const renameSecret = (oldName, newName) => {
+    if (newName.trim() === "") return;
+
+    // Update the name in the secretNames array
+    const updatedNames = secretNames.map(name =>
+      name === oldName ? newName : name
+    );
+    setSecretNames(updatedNames);
+
+    // Update all secret details that use this name
+    const updatedSecrets = secretsDetails.map(secret =>
+      secret.name === oldName ? { ...secret, name: newName } : secret
+    );
+    setSecretsDetails(updatedSecrets);
   };
 
   // Function to remove a secret
@@ -178,8 +225,77 @@ useEffect(() => {
 
   const handleSecretChange = (index, field, value) => {
     const updatedSecrets = [...secretsDetails];
+
+    // If the field is "name" and the value is "add-new-secret", create a new secret name
+    if (field === "name" && value === "add-new-secret") {
+      value = addSecretName();
+    }
+
     updatedSecrets[index][field] = value;
     setSecretsDetails(updatedSecrets);
+  };
+
+  // State to keep track of available configmap names
+  const [configmapNames, setConfigmapNames] = useState([]);
+
+  // Function to add a new configmap
+  const addConfigmap = () => {
+    setConfigmapsDetails([...configmapsDetails, {
+      name: configmapNames.length > 0 ? configmapNames[0] : "",
+      key: "",
+      value: "",
+      mountType: "env"
+    }]);
+  };
+
+  // Function to add a new configmap name
+  const addConfigmapName = () => {
+    const newConfigmapName = `config-${configmapNames.length + 1}`;
+    setConfigmapNames([...configmapNames, newConfigmapName]);
+
+    // Create a new configmap entry with this name
+    setConfigmapsDetails([...configmapsDetails, {
+      name: newConfigmapName,
+      key: "",
+      value: "",
+      mountType: "env"
+    }]);
+
+    return newConfigmapName;
+  };
+
+  // Function to rename a configmap
+  const renameConfigmap = (oldName, newName) => {
+    if (newName.trim() === "") return;
+
+    // Update the name in the configmapNames array
+    const updatedNames = configmapNames.map(name =>
+      name === oldName ? newName : name
+    );
+    setConfigmapNames(updatedNames);
+
+    // Update all configmap details that use this name
+    const updatedConfigmaps = configmapsDetails.map(configmap =>
+      configmap.name === oldName ? { ...configmap, name: newName } : configmap
+    );
+    setConfigmapsDetails(updatedConfigmaps);
+  };
+
+  // Function to remove a configmap
+  const removeConfigmap = (index) => {
+    setConfigmapsDetails(configmapsDetails.filter((_, i) => i !== index));
+  };
+
+  const handleConfigmapChange = (index, field, value) => {
+    const updatedConfigmaps = [...configmapsDetails];
+
+    // If the field is "name" and the value is "add-new-configmap", create a new configmap name
+    if (field === "name" && value === "add-new-configmap") {
+      value = addConfigmapName();
+    }
+
+    updatedConfigmaps[index][field] = value;
+    setConfigmapsDetails(updatedConfigmaps);
   };
 
   // Function to handle namespace selection or creation
@@ -216,6 +332,10 @@ useEffect(() => {
       storageDetails,
       secretsRequired,
       secretsDetails,
+      configmapsRequired,
+      configmapsDetails,
+      createNewNamespace,
+      requesterNickname: user?.nickname || user?.name || ""
     };
 
     try {
@@ -249,6 +369,10 @@ useEffect(() => {
       storageDetails,
       secretsRequired,
       secretsDetails,
+      configmapsRequired,
+      configmapsDetails,
+      createNewNamespace,
+      requesterNickname: user?.nickname || user?.name || ""
     };
 
     try {
@@ -463,6 +587,281 @@ useEffect(() => {
           )}
         </div>
 
+        {/* ConfigMaps Configuration */}
+        <div className="form-section">
+          <h3>ConfigMaps Configuration</h3>
+
+          <div className="checkbox-group">
+            <input
+              type="checkbox"
+              id="configmapsRequired"
+              checked={configmapsRequired}
+              onChange={() => setConfigmapsRequired(!configmapsRequired)}
+            />
+            <label htmlFor="configmapsRequired">Requires ConfigMaps</label>
+          </div>
+
+          {configmapsRequired && (
+            <div>
+              {/* Group the configmaps by name for better visualization */}
+              {configmapNames.length > 0 && (
+                <div>
+                  {configmapNames.map((configmapName, nameIndex) => {
+                    // Filter configmaps with this name
+                    const configmapsWithName = configmapsDetails.filter(c => c.name === configmapName);
+
+                    return configmapsWithName.length > 0 ? (
+                      <div key={nameIndex} className="nested-form-item" style={{ background: '#f5fff0', marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
+                          <h4 style={{ margin: '0' }}>ConfigMap:</h4>
+                          <input
+                            type="text"
+                            value={configmapName}
+                            onChange={(e) => renameConfigmap(configmapName, e.target.value)}
+                            style={{
+                              fontWeight: 'bold',
+                              fontSize: '1rem',
+                              padding: '0.25rem 0.5rem',
+                              border: '1px dashed #aaa',
+                              borderRadius: '4px',
+                              background: 'transparent'
+                            }}
+                          />
+                        </div>
+
+                        {configmapsWithName.map((configmap, detailIndex) => {
+                          // Find the original index in the full configmapsDetails array
+                          const originalIndex = configmapsDetails.findIndex(
+                            c => c === configmap
+                          );
+
+                          return (
+                            <div key={`${nameIndex}-${detailIndex}`}
+                                 className="nested-form-item"
+                                 style={{ marginBottom: '0.75rem' }}>
+                              <div className="form-row">
+                                <div className="form-group">
+                                  <label>Key:</label>
+                                  <input
+                                    type="text"
+                                    value={configmap.key}
+                                    onChange={(e) => handleConfigmapChange(originalIndex, "key", e.target.value)}
+                                    placeholder="ConfigMap key name"
+                                  />
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Value:</label>
+                                  <input
+                                    type="text"
+                                    value={configmap.value}
+                                    onChange={(e) => handleConfigmapChange(originalIndex, "value", e.target.value)}
+                                    placeholder="ConfigMap value"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="form-row">
+                                <div className="form-group">
+                                  <label>Mount Type:</label>
+                                  <select
+                                    value={configmap.mountType}
+                                    onChange={(e) => handleConfigmapChange(originalIndex, "mountType", e.target.value)}
+                                  >
+                                    <option value="env">Environment Variable</option>
+                                    <option value="volume">Volume Mount</option>
+                                  </select>
+                                </div>
+
+                                {configmap.mountType === "env" && (
+                                  <div className="form-group">
+                                    <label>Env Variable Name:</label>
+                                    <input
+                                      type="text"
+                                      value={configmap.envName || ""}
+                                      onChange={(e) => handleConfigmapChange(originalIndex, "envName", e.target.value)}
+                                      placeholder="Leave empty to use key name"
+                                    />
+                                  </div>
+                                )}
+
+                                {configmap.mountType === "volume" && (
+                                  <div className="form-group">
+                                    <label>Mount Path:</label>
+                                    <input
+                                      type="text"
+                                      value={configmap.mountPath || ""}
+                                      onChange={(e) => handleConfigmapChange(originalIndex, "mountPath", e.target.value)}
+                                      placeholder="Path to mount the configmap at"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                className="remove-btn"
+                                onClick={() => removeConfigmap(originalIndex)}
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Add key-value pair to this configmap */}
+                        <button
+                          type="button"
+                          className="add-btn"
+                          style={{ marginTop: '0.5rem' }}
+                          onClick={() => {
+                            setConfigmapsDetails([...configmapsDetails, {
+                              name: configmapName,
+                              key: "",
+                              value: "",
+                              mountType: "env"
+                            }]);
+                          }}
+                        >
+                          + Add Key-Value Pair to {configmapName}
+                        </button>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              )}
+
+              {/* ConfigMaps with no assigned name yet, if any */}
+              {configmapsDetails.filter(c => !c.name || !configmapNames.includes(c.name)).map((configmap, index) => {
+                const originalIndex = configmapsDetails.findIndex(c => c === configmap);
+
+                return (
+                  <div key={`unnamed-${index}`} className="nested-form-item">
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>ConfigMap Name:</label>
+                        <select
+                          value={configmap.name || ""}
+                          onChange={(e) => handleConfigmapChange(originalIndex, "name", e.target.value)}
+                          required
+                        >
+                          <option value="">Select a configmap</option>
+                          {configmapNames.map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                          <option value="add-new-configmap">+ Add New ConfigMap</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label>Key:</label>
+                        <input
+                          type="text"
+                          value={configmap.key}
+                          onChange={(e) => handleConfigmapChange(originalIndex, "key", e.target.value)}
+                          placeholder="ConfigMap key name"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Value:</label>
+                        <input
+                          type="text"
+                          value={configmap.value}
+                          onChange={(e) => handleConfigmapChange(originalIndex, "value", e.target.value)}
+                          placeholder="ConfigMap value"
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label>Mount Type:</label>
+                        <select
+                          value={configmap.mountType}
+                          onChange={(e) => handleConfigmapChange(originalIndex, "mountType", e.target.value)}
+                        >
+                          <option value="env">Environment Variable</option>
+                          <option value="volume">Volume Mount</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {configmap.mountType === "env" && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>Env Variable Name:</label>
+                          <input
+                            type="text"
+                            value={configmap.envName || ""}
+                            onChange={(e) => handleConfigmapChange(originalIndex, "envName", e.target.value)}
+                            placeholder="Leave empty to use key name"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {configmap.mountType === "volume" && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>Mount Path:</label>
+                          <input
+                            type="text"
+                            value={configmap.mountPath || ""}
+                            onChange={(e) => handleConfigmapChange(originalIndex, "mountPath", e.target.value)}
+                            placeholder="Path to mount the configmap at"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="remove-btn"
+                      onClick={() => removeConfigmap(originalIndex)}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* Add new configmap or add to existing configmap buttons */}
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Add a new entry to the first configmap if available, otherwise create a new configmap first
+                    if (configmapNames.length === 0) {
+                      addConfigmapName();
+                    } else {
+                      setConfigmapsDetails([...configmapsDetails, {
+                        name: configmapNames[0],
+                        key: "",
+                        value: "",
+                        mountType: "env"
+                      }]);
+                    }
+                  }}
+                  className="add-btn"
+                  style={{ flex: 1 }}
+                >
+                  + Add ConfigMap Entry
+                </button>
+
+                <button
+                  type="button"
+                  onClick={addConfigmapName}
+                  className="add-btn"
+                  style={{ flex: 1 }}
+                >
+                  + Create New ConfigMap
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Secrets Configuration */}
         <div className="form-section">
           <h3>Secrets Configuration</h3>
@@ -479,98 +878,261 @@ useEffect(() => {
 
           {secretsRequired && (
             <div>
-              {secretsDetails.map((secret, index) => (
-                <div key={index} className="nested-form-item">
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Secret Name:</label>
-                      <input
-                        type="text"
-                        value={secret.name}
-                        onChange={(e) => handleSecretChange(index, "name", e.target.value)}
-                        placeholder="Name for the secret"
-                      />
-                    </div>
+              {/* Group the secrets by name for better visualization */}
+              {secretNames.length > 0 && (
+                <div>
+                  {secretNames.map((secretName, nameIndex) => {
+                    // Filter secrets with this name
+                    const secretsWithName = secretsDetails.filter(s => s.name === secretName);
 
-                    <div className="form-group">
-                      <label>Key:</label>
-                      <input
-                        type="text"
-                        value={secret.key}
-                        onChange={(e) => handleSecretChange(index, "key", e.target.value)}
-                        placeholder="Secret key name"
-                      />
-                    </div>
-                  </div>
+                    return secretsWithName.length > 0 ? (
+                      <div key={nameIndex} className="nested-form-item" style={{ background: '#f0f5ff', marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
+                          <h4 style={{ margin: '0' }}>Secret:</h4>
+                          <input
+                            type="text"
+                            value={secretName}
+                            onChange={(e) => renameSecret(secretName, e.target.value)}
+                            style={{
+                              fontWeight: 'bold',
+                              fontSize: '1rem',
+                              padding: '0.25rem 0.5rem',
+                              border: '1px dashed #aaa',
+                              borderRadius: '4px',
+                              background: 'transparent'
+                            }}
+                          />
+                        </div>
 
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Value:</label>
-                      <input
-                        type="text"
-                        value={secret.value}
-                        onChange={(e) => handleSecretChange(index, "value", e.target.value)}
-                        placeholder="Secret value"
-                      />
-                    </div>
+                        {secretsWithName.map((secret, detailIndex) => {
+                          // Find the original index in the full secretsDetails array
+                          const originalIndex = secretsDetails.findIndex(
+                            s => s === secret
+                          );
 
-                    <div className="form-group">
-                      <label>Mount Type:</label>
-                      <select
-                        value={secret.mountType}
-                        onChange={(e) => handleSecretChange(index, "mountType", e.target.value)}
-                      >
-                        <option value="env">Environment Variable</option>
-                        <option value="volume">Volume Mount</option>
-                      </select>
-                    </div>
-                  </div>
+                          return (
+                            <div key={`${nameIndex}-${detailIndex}`}
+                                 className="nested-form-item"
+                                 style={{ marginBottom: '0.75rem' }}>
+                              <div className="form-row">
+                                <div className="form-group">
+                                  <label>Key:</label>
+                                  <input
+                                    type="text"
+                                    value={secret.key}
+                                    onChange={(e) => handleSecretChange(originalIndex, "key", e.target.value)}
+                                    placeholder="Secret key name"
+                                  />
+                                </div>
 
-                  {secret.mountType === "env" && (
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label>Env Variable Name:</label>
-                        <input
-                          type="text"
-                          value={secret.envName || ""}
-                          onChange={(e) => handleSecretChange(index, "envName", e.target.value)}
-                          placeholder="Leave empty to use key name"
-                        />
+                                <div className="form-group">
+                                  <label>Value:</label>
+                                  <input
+                                    type="text"
+                                    value={secret.value}
+                                    onChange={(e) => handleSecretChange(originalIndex, "value", e.target.value)}
+                                    placeholder="Secret value"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="form-row">
+                                <div className="form-group">
+                                  <label>Mount Type:</label>
+                                  <select
+                                    value={secret.mountType}
+                                    onChange={(e) => handleSecretChange(originalIndex, "mountType", e.target.value)}
+                                  >
+                                    <option value="env">Environment Variable</option>
+                                    <option value="volume">Volume Mount</option>
+                                  </select>
+                                </div>
+
+                                {secret.mountType === "env" && (
+                                  <div className="form-group">
+                                    <label>Env Variable Name:</label>
+                                    <input
+                                      type="text"
+                                      value={secret.envName || ""}
+                                      onChange={(e) => handleSecretChange(originalIndex, "envName", e.target.value)}
+                                      placeholder="Leave empty to use key name"
+                                    />
+                                  </div>
+                                )}
+
+                                {secret.mountType === "volume" && (
+                                  <div className="form-group">
+                                    <label>Mount Path:</label>
+                                    <input
+                                      type="text"
+                                      value={secret.mountPath || ""}
+                                      onChange={(e) => handleSecretChange(originalIndex, "mountPath", e.target.value)}
+                                      placeholder="Path to mount the secret at"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                className="remove-btn"
+                                onClick={() => removeSecret(originalIndex)}
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Add key-value pair to this secret */}
+                        <button
+                          type="button"
+                          className="add-btn"
+                          style={{ marginTop: '0.5rem' }}
+                          onClick={() => {
+                            setSecretsDetails([...secretsDetails, {
+                              name: secretName,
+                              key: "",
+                              value: "",
+                              mountType: "env"
+                            }]);
+                          }}
+                        >
+                          + Add Key-Value Pair to {secretName}
+                        </button>
                       </div>
-                    </div>
-                  )}
-
-                  {secret.mountType === "volume" && (
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label>Mount Path:</label>
-                        <input
-                          type="text"
-                          value={secret.mountPath || ""}
-                          onChange={(e) => handleSecretChange(index, "mountPath", e.target.value)}
-                          placeholder="Path to mount the secret at"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    className="remove-btn"
-                    onClick={() => removeSecret(index)}
-                  >
-                    &times;
-                  </button>
+                    ) : null;
+                  })}
                 </div>
-              ))}
+              )}
 
-              <button
-                type="button"
-                onClick={addSecret}
-                className="add-btn"
-              >
-                + Add Secret
-              </button>
+              {/* Secrets with no assigned name yet, if any */}
+              {secretsDetails.filter(s => !s.name || !secretNames.includes(s.name)).map((secret, index) => {
+                const originalIndex = secretsDetails.findIndex(s => s === secret);
+
+                return (
+                  <div key={`unnamed-${index}`} className="nested-form-item">
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Secret Name:</label>
+                        <select
+                          value={secret.name || ""}
+                          onChange={(e) => handleSecretChange(originalIndex, "name", e.target.value)}
+                          required
+                        >
+                          <option value="">Select a secret</option>
+                          {secretNames.map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                          <option value="add-new-secret">+ Add New Secret</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label>Key:</label>
+                        <input
+                          type="text"
+                          value={secret.key}
+                          onChange={(e) => handleSecretChange(originalIndex, "key", e.target.value)}
+                          placeholder="Secret key name"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Value:</label>
+                        <input
+                          type="text"
+                          value={secret.value}
+                          onChange={(e) => handleSecretChange(originalIndex, "value", e.target.value)}
+                          placeholder="Secret value"
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label>Mount Type:</label>
+                        <select
+                          value={secret.mountType}
+                          onChange={(e) => handleSecretChange(originalIndex, "mountType", e.target.value)}
+                        >
+                          <option value="env">Environment Variable</option>
+                          <option value="volume">Volume Mount</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {secret.mountType === "env" && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>Env Variable Name:</label>
+                          <input
+                            type="text"
+                            value={secret.envName || ""}
+                            onChange={(e) => handleSecretChange(originalIndex, "envName", e.target.value)}
+                            placeholder="Leave empty to use key name"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {secret.mountType === "volume" && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>Mount Path:</label>
+                          <input
+                            type="text"
+                            value={secret.mountPath || ""}
+                            onChange={(e) => handleSecretChange(originalIndex, "mountPath", e.target.value)}
+                            placeholder="Path to mount the secret at"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="remove-btn"
+                      onClick={() => removeSecret(originalIndex)}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* Add new secret or add to existing secret buttons */}
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Add a new entry to the first secret if available, otherwise create a new secret first
+                    if (secretNames.length === 0) {
+                      addSecretName();
+                    } else {
+                      setSecretsDetails([...secretsDetails, {
+                        name: secretNames[0],
+                        key: "",
+                        value: "",
+                        mountType: "env"
+                      }]);
+                    }
+                  }}
+                  className="add-btn"
+                  style={{ flex: 1 }}
+                >
+                  + Add Secret Entry
+                </button>
+
+                <button
+                  type="button"
+                  onClick={addSecretName}
+                  className="add-btn"
+                  style={{ flex: 1 }}
+                >
+                  + Create New Secret
+                </button>
+              </div>
             </div>
           )}
         </div>

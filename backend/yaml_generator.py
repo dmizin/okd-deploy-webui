@@ -22,12 +22,26 @@ def generate_yaml(data):
     secrets_required = data.get("secretsRequired", False)
     secrets_details = data.get("secretsDetails", []) if secrets_required else []
 
-    # Namespace YAML
-    namespace_yaml = {
-        "apiVersion": "v1",
-        "kind": "Namespace",
-        "metadata": {"name": namespace}
-    }
+    configmaps_required = data.get("configmapsRequired", False)
+    configmaps_details = data.get("configmapsDetails", []) if configmaps_required else []
+
+    # Check if it's a new namespace
+    create_namespace = data.get("createNewNamespace", False)
+    requester_nickname = data.get("requesterNickname", "")
+
+    # Namespace YAML (only if creating a new namespace)
+    namespace_yaml = None
+    if create_namespace:
+        namespace_yaml = {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": namespace,
+                "annotations": {
+                    "openshift.io/requester": requester_nickname
+                }
+            }
+        }
 
     # Deployment YAML
     deployment_yaml = {
@@ -89,6 +103,71 @@ def generate_yaml(data):
                 "name": volume_name,
                 "persistentVolumeClaim": {"claimName": volume_name}
             })
+
+    # ConfigMaps Configuration (if enabled)
+    configmaps_yaml = []
+    if configmaps_required:
+        # Group configmap items by their name to create proper configmap objects
+        configmap_groups = {}
+        for configmap_detail in configmaps_details:
+            configmap_name = configmap_detail["name"]
+            if configmap_name not in configmap_groups:
+                configmap_groups[configmap_name] = []
+            configmap_groups[configmap_name].append(configmap_detail)
+
+        # Create configmap objects for each group
+        for configmap_name, configmap_items in configmap_groups.items():
+            # Create the configmap data
+            configmap_data = {}
+            for item in configmap_items:
+                configmap_data[item["key"]] = item["value"]
+
+            # Create the configmap YAML
+            configmap_yaml = {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {"name": configmap_name, "namespace": namespace},
+                "data": configmap_data
+            }
+            configmaps_yaml.append(configmap_yaml)
+
+            # Add references to deployment
+            for item in configmap_items:
+                if item["mountType"] == "env":
+                    # Environment variable mount
+                    env_name = item.get("envName", item["key"])  # Use key name if envName not provided
+                    deployment_yaml["spec"]["template"]["spec"]["containers"][0]["env"].append({
+                        "name": env_name,
+                        "valueFrom": {
+                            "configMapKeyRef": {
+                                "name": configmap_name,
+                                "key": item["key"]
+                            }
+                        }
+                    })
+                else:  # Volume mount
+                    # Check if volume already exists
+                    volume_exists = False
+                    for volume in deployment_yaml["spec"]["template"]["spec"]["volumes"]:
+                        if volume.get("name") == configmap_name:
+                            volume_exists = True
+                            break
+
+                    # Add volume if it doesn't exist
+                    if not volume_exists:
+                        deployment_yaml["spec"]["template"]["spec"]["volumes"].append({
+                            "name": configmap_name,
+                            "configMap": {
+                                "name": configmap_name
+                            }
+                        })
+
+                    # Add volume mount
+                    deployment_yaml["spec"]["template"]["spec"]["containers"][0]["volumeMounts"].append({
+                        "name": configmap_name,
+                        "mountPath": item["mountPath"],
+                        "subPath": item["key"]
+                    })
 
     # Secrets Configuration (if enabled)
     secrets_yaml = []
@@ -184,9 +263,21 @@ def generate_yaml(data):
         }
 
     # Compile YAML Output
-    yaml_documents = [yaml.dump(namespace_yaml), yaml.dump(deployment_yaml), yaml.dump(service_yaml)]
+    yaml_documents = []
+
+    # Only add namespace YAML if creating a new namespace
+    if namespace_yaml:
+        yaml_documents.append(yaml.dump(namespace_yaml))
+
+    yaml_documents.extend([
+        yaml.dump(deployment_yaml),
+        yaml.dump(service_yaml)
+    ])
+
     if persistent_volumes_yaml:
         yaml_documents.extend([yaml.dump(pvc) for pvc in persistent_volumes_yaml])
+    if configmaps_yaml:
+        yaml_documents.extend([yaml.dump(configmap) for configmap in configmaps_yaml])
     if secrets_yaml:
         yaml_documents.extend([yaml.dump(secret) for secret in secrets_yaml])
     if route_yaml:
